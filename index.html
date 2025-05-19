@@ -713,16 +713,13 @@
                             const p1 = points[vertexMap[line.v1.toString()]];
                             const p2 = points[vertexMap[line.v2.toString()]];
 
-                            linePointsForBuffer.push(p1);
-                            linePointsForBuffer.push(p2);
-
                             flatLineVertices.push(p1.x, p1.y, p1.z);
                             flatLineVertices.push(p2.x, p2.y, p2.z);
                         }
                     });
 
                     if (flatLineVertices.length > 0) {
-                        if (isSelected) {
+                        if (isSelected) { // Chỉ vẽ lines nếu shape được chọn
                             const lineGeo = new THREE.LineSegmentsGeometry();
                             lineGeo.setPositions(flatLineVertices);
 
@@ -730,19 +727,13 @@
                                 color: HIGHLIGHTED_LINE_COLOR,
                                 linewidth: 3, // Độ dày của line (ví dụ: 3 pixels)
                                 resolution: new THREE.Vector2(threeJsCanvasContainer.clientWidth, threeJsCanvasContainer.clientHeight),
-                                depthTest: false,
+                                depthTest: true, // Đổi thành true để đường bị khuất không hiển thị
                                 dashed: false
                             });
 
                             const lineSegmentsFat = new THREE.LineSegments2(lineGeo, lineMat);
                             shapeSpecificGroup.add(lineSegmentsFat);
                             threeShapeObjects[shape._internalId].lines = lineSegmentsFat;
-                        } else {
-                            // Logic cũ cho các shape không được chọn
-                            const lineGeometry = new THREE.BufferGeometry().setFromPoints(linePointsForBuffer);
-                            const lineSegments = new THREE.LineSegments(lineGeometry, currentLineMaterial); // currentLineMaterial đã được định nghĩa ở trên
-                            shapeSpecificGroup.add(lineSegments);
-                            threeShapeObjects[shape._internalId].lines = lineSegments;
                         }
                     }
                 }
