@@ -654,7 +654,7 @@
                 });
                 const currentFaceMaterial = new THREE.MeshStandardMaterial({
                     color: isSelected ? HIGHLIGHTED_FACE_COLOR : NORMAL_FACE_COLOR,
-                    side: THREE.DoubleSide,
+                    side: THREE.FrontSide,
                     metalness: 0.1,
                     roughness: 0.75,
                     depthTest: true
