@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Generate 2D XML from 3D JSON</title>
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/loader.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      margin: 0;
+      background-color: #f0f0f0;
+      overflow: hidden;
+    }
+
+    h1 {
+      text-align: center;
+      margin-top: 15px;
+      margin-bottom: 10px;
+      flex-shrink: 0;
+    }
+
+    #controlsContainer {
+      text-align: center;
+      margin-bottom: 15px;
+      flex-shrink: 0;
+    }
+
+    #controlsContainer button {
+      padding: 8px 15px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    #mainContainer {
+      display: flex;
+      flex-direction: row;
+      flex-grow: 1;
+      width: 100%;
+      padding: 0 10px 10px 10px;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    #svgViewerPanel {
+      flex: 1;
+      margin-right: 5px;
+      border: 1px solid #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: #fff;
+      overflow: hidden;
+      position: relative;
+      box-sizing: border-box;
+    }
+
+    #xmlOutputPanel {
+      flex: 1;
+      margin-left: 5px;
+      display: flex;
+      flex-direction: column;
+      /* Editor on top, button below */
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    #xmlEditorContainer {
+      flex-grow: 1;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+      /* Crucial for Monaco editor */
+      margin-bottom: 10px;
+    }
+
+    #xmlEditorInnerContainer {
+      /* Monaco target */
+      width: 100%;
+      height: 100%;
+    }
+
+
+    #copyXmlButton {
+      padding: 8px 15px;
+      font-size: 14px;
+      cursor: pointer;
+      align-self: center;
+      /* Center button in the flex column */
+    }
+
+    svg {
+      cursor: grab;
+      max-width: 100%;
+      max-height: 100%;
+    }
+
+    svg:active {
+      cursor: grabbing;
+    }
+
+    /* For SVG highlight, if we add that feature later */
+    .highlighted-svg-element {
+      stroke: #007AFF !important;
+      stroke-width: 3px !important;
+    }
+
+    #userMessage {
+      text-align: center;
+      padding: 10px;
+      color: #333;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>3D JSON to 2D XML Converter (Top-Down Orthographic)</h1>
+  <div id="controlsContainer">
+    <button id="loadJsonFromClipboardButton">Load 3D JSON from Clipboard</button>
+  </div>
+  <div id="userMessage">
+    <p>Load a 3D JSON to see the 2D XML and preview.</p>
+  </div>
+  <div id="mainContainer">
+    <div id="svgViewerPanel">
+      <!-- SVG will be rendered here -->
+    </div>
+    <div id="xmlOutputPanel">
+      <div id="xmlEditorContainer">
+        <div id="xmlEditorInnerContainer" aria-label="Generated XML Output Area"></div>
+      </div>
+      <button id="copyXmlButton">Copy Generated XML</button>
+    </div>
+  </div>
+
+  <script>
+    // Monaco Editor instance for XML output
+    let xmlOutputEditor;
+    const svgViewerPanel = document.getElementById('svgViewerPanel');
+    const xmlEditorInnerContainer = document.getElementById('xmlEditorInnerContainer');
+    const loadJsonButton = document.getElementById('loadJsonFromClipboardButton');
+    const copyXmlButton = document.getElementById('copyXmlButton');
+    const userMessageDiv = document.getElementById('userMessage');
+
+    // --- SVG Viewer Code (Copied and adapted from geom2d-editor.html) ---
+    class SvgConverter {
+      constructor() {
+        this.svgNS = "http://www.w3.org/2000/svg";
+        this.bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+        this.elementProcessors = new Map();
+        this.registerProcessors();
+        // this.drawableElementRenderOrder = 0; // Not strictly needed for this tool's viewer if no source-highlight
+      }
+
+      updateBounds(x, y) {
+        if (isFinite(x) && isFinite(y)) {
+          this.bounds.minX = Math.min(this.bounds.minX, x);
+          this.bounds.minY = Math.min(this.bounds.minY, y);
+          this.bounds.maxX = Math.max(this.bounds.maxX, x);
+          this.bounds.maxY = Math.max(this.bounds.maxY, y);
+        }
+      }
+
+      registerProcessors() {
+        this.registerProcessor("POLYGON", new PolygonProcessor(this));
+        this.registerProcessor("PATH", new PathProcessor(this));
+      }
+
+      registerProcessor(tagName, processor) {
+        this.elementProcessors.set(tagName, processor);
+      }
+
+      convert(xmlString) {
+        this.bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+        // this.drawableElementRenderOrder = 0; 
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+
+        const parseError = xmlDoc.querySelector("parsererror");
+        if (parseError) {
+          console.error("XML Parsing Error for viewer:", parseError.textContent);
+          throw new Error("Error parsing viewer XML. Check console.");
+        }
+
+        const svg = document.createElementNS(this.svgNS, "svg");
+        svg.setAttribute("version", "1.1");
+        svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+        const geometryParentNodes = xmlDoc.querySelectorAll("geometry"); // Expects <geometry> as root for elements
+        if (geometryParentNodes.length === 0) {
+          console.warn("No <geometry> tags found in the viewer XML.");
+        }
+
+        let hasRenderableElements = false;
+        geometryParentNodes.forEach(geometryNode => {
+          for (let child of geometryNode.children) {
+            const processor = this.elementProcessors.get(child.tagName.toUpperCase());
+            if (processor) {
+              try {
+                const svgElement = processor.process(child);
+                if (svgElement) {
+                  // svgElement.setAttribute('data-render-order', this.drawableElementRenderOrder.toString());
+                  svg.appendChild(svgElement);
+                  hasRenderableElements = true;
+                  // this.drawableElementRenderOrder++;
+                }
+              } catch (e) {
+                console.error(`Error processing element <${child.tagName}> for viewer:`, e, child);
+              }
+            } else {
+              console.warn(`No viewer processor found for element <${child.tagName}>`);
+            }
+          }
+        });
+
+        if (!hasRenderableElements) {
+          console.warn("No renderable elements processed for viewer SVG.");
+          svg.setAttribute("viewBox", "0 0 100 100");
+          svg.setAttribute("width", "100%");
+          svg.setAttribute("height", "100%");
+          const text = document.createElementNS(this.svgNS, "text");
+          text.setAttribute("id", "no-content-message");
+          text.setAttribute("x", "50%");
+          text.setAttribute("y", "50%");
+          text.setAttribute("text-anchor", "middle");
+          text.setAttribute("dominant-baseline", "middle");
+          text.setAttribute("font-family", "Arial, sans-serif");
+          text.setAttribute("font-size", "12");
+          text.textContent = "No renderable content in preview";
+          svg.appendChild(text);
+          return new XMLSerializer().serializeToString(svg);
+        }
+
+        // Add coordinate axes (similar to other tool)
+        const padding = 50;
+        const { minX, minY, maxX, maxY } = this.bounds;
+
+        if (minX === Infinity || minY === Infinity || maxX === -Infinity || maxY === -Infinity) {
+          svg.setAttribute("viewBox", `0 0 ${800} ${800}`);
+        } else {
+          let vbWidth = maxX - minX;
+          let vbHeight = maxY - minY;
+          let vbX = minX;
+          let vbY = minY;
+          const minDimension = 10;
+          if (vbWidth < minDimension) {
+            vbX -= (minDimension - vbWidth) / 2;
+            vbWidth = minDimension;
+          }
+          if (vbHeight < minDimension) {
+            vbY -= (minDimension - vbHeight) / 2;
+            vbHeight = minDimension;
+          }
+          svg.setAttribute("viewBox", `${vbX - padding} ${vbY - padding} ${vbWidth + 2 * padding} ${vbHeight + 2 * padding}`);
+        }
+        svg.setAttribute("width", "100%");
+        svg.setAttribute("height", "100%");
+
+        const axesGroup = document.createElementNS(this.svgNS, "g");
+        axesGroup.setAttribute("id", "coordinate-axes");
+        const finalVbX = parseFloat(svg.getAttribute("viewBox").split(" ")[0]);
+        const finalVbY = parseFloat(svg.getAttribute("viewBox").split(" ")[1]);
+        const finalVbWidth = parseFloat(svg.getAttribute("viewBox").split(" ")[2]);
+        const finalVbHeight = parseFloat(svg.getAttribute("viewBox").split(" ")[3]);
+
+        const xAxis = document.createElementNS(this.svgNS, "line");
+        xAxis.setAttribute("x1", finalVbX.toString());
+        xAxis.setAttribute("y1", "0");
+        xAxis.setAttribute("x2", (finalVbX + finalVbWidth).toString());
+        xAxis.setAttribute("y2", "0");
+        xAxis.setAttribute("stroke", "rgba(128, 128, 128, 0.7)");
+        xAxis.setAttribute("stroke-width", "1");
+        xAxis.setAttribute("stroke-dasharray", "4,4");
+        axesGroup.appendChild(xAxis);
+
+        const yAxis = document.createElementNS(this.svgNS, "line");
+        yAxis.setAttribute("x1", "0");
+        yAxis.setAttribute("y1", finalVbY.toString());
+        yAxis.setAttribute("x2", "0");
+        yAxis.setAttribute("y2", (finalVbY + finalVbHeight).toString());
+        yAxis.setAttribute("stroke", "rgba(128, 128, 128, 0.7)");
+        yAxis.setAttribute("stroke-width", "1");
+        yAxis.setAttribute("stroke-dasharray", "4,4");
+        axesGroup.appendChild(yAxis);
+
+        const xAxisLabel = document.createElementNS(this.svgNS, "text");
+        xAxisLabel.setAttribute("x", (finalVbX + finalVbWidth - 10).toString());
+        xAxisLabel.setAttribute("y", (0 - 8).toString());
+        xAxisLabel.setAttribute("font-family", "Arial, sans-serif");
+        xAxisLabel.setAttribute("font-size", "12");
+        xAxisLabel.setAttribute("fill", "dimgray");
+        xAxisLabel.setAttribute("text-anchor", "end");
+        xAxisLabel.textContent = "X";
+        axesGroup.appendChild(xAxisLabel);
+
+        const yAxisLabel = document.createElementNS(this.svgNS, "text");
+        yAxisLabel.setAttribute("x", (0 + 8).toString());
+        yAxisLabel.setAttribute("y", (finalVbY + 15).toString());
+        yAxisLabel.setAttribute("font-family", "Arial, sans-serif");
+        yAxisLabel.setAttribute("font-size", "12");
+        yAxisLabel.setAttribute("fill", "dimgray");
+        yAxisLabel.setAttribute("text-anchor", "start");
+        yAxisLabel.textContent = "Y";
+        axesGroup.appendChild(yAxisLabel);
+
+        if (svg.firstChild) {
+          svg.insertBefore(axesGroup, svg.firstChild);
+        } else {
+          svg.appendChild(axesGroup);
+        }
+        return new XMLSerializer().serializeToString(svg);
+      }
+    }
+
+    class ElementProcessor {
+      constructor(converter) {
+        this.converter = converter;
+        this.svgNS = converter.svgNS;
+      }
+      applyCommonAttributes(svgElement, xmlElement) {
+        const fillc = xmlElement.getAttribute("fillc");
+        const forec = xmlElement.getAttribute("forec");
+        if (fillc) svgElement.setAttribute("fill", this.convertColor(fillc));
+        else svgElement.setAttribute("fill", "none");
+        if (forec) svgElement.setAttribute("stroke", this.convertColor(forec));
+        else svgElement.setAttribute("stroke", "rgba(0,0,0,1)");
+
+        // For this viewer, LINETYPE width is expected to be a sibling in the <geometry> tag
+        let strokeWidth = "1"; // Default
+        const parentGeometry = xmlElement.closest("geometry");
+        if (parentGeometry) {
+          const lineTypeElement = parentGeometry.querySelector("LINETYPE");
+          if (lineTypeElement && lineTypeElement.getAttribute("width")) {
+            strokeWidth = lineTypeElement.getAttribute("width");
+          }
+        }
+        svgElement.setAttribute("stroke-width", strokeWidth);
+      }
+      convertColor(argb) {
+        if (!argb || typeof argb !== 'string' || !argb.startsWith('#') || argb.length !== 9) {
+          return "rgba(0,0,0,1)";
+        }
+        try {
+          const a = parseInt(argb.slice(1, 3), 16) / 255;
+          const r = parseInt(argb.slice(3, 5), 16);
+          const g = parseInt(argb.slice(5, 7), 16);
+          const b = parseInt(argb.slice(7, 9), 16);
+          return `rgba(${r}, ${g}, ${b}, ${a})`;
+        } catch (e) {
+          return "rgba(0,0,0,1)";
+        }
+      }
+    }
+
+    class PolygonProcessor extends ElementProcessor {
+      process(xmlElement) {
+        const points = [];
+        for (let i = 1; ; i++) {
+          const xAttr = xmlElement.getAttribute(`x${i}`);
+          const yAttr = xmlElement.getAttribute(`y${i}`);
+          if (xAttr === null || yAttr === null) break;
+          const x = parseFloat(xAttr);
+          const y = parseFloat(yAttr);
+          if (isNaN(x) || isNaN(y)) {
+            console.warn(`Invalid coordinate in POLYGON for viewer: x${i}="${xAttr}", y${i}="${yAttr}".`);
+            continue;
+          }
+          points.push(`${x},${y}`);
+          this.converter.updateBounds(x, y);
+        }
+        if (points.length < 3) { // A polygon needs at least 3 points
+          console.warn("POLYGON for viewer has fewer than 3 valid points. Skipping element:", xmlElement);
+          return null;
+        }
+        const svgPolygon = document.createElementNS(this.svgNS, "polygon");
+        svgPolygon.setAttribute("points", points.join(" "));
+        this.applyCommonAttributes(svgPolygon, xmlElement);
+        return svgPolygon;
+      }
+    }
+
+    class PathProcessor extends ElementProcessor {
+      process(xmlElement) {
+        const segments = xmlElement.getAttribute("segments");
+        if (!segments) {
+          console.warn("PATH element (viewer) is missing 'segments' attribute. Skipping.", xmlElement);
+          return null;
+        }
+        const normalizedSegments = segments.replace(/([a-zA-Z])/g, (match) => match.toUpperCase());
+        const svgPath = document.createElementNS(this.svgNS, "path");
+        svgPath.setAttribute("d", normalizedSegments);
+        this.applyCommonAttributes(svgPath, xmlElement);
+
+        // Simplified bounds calculation for paths for this tool - relying on points for now
+        // A proper getBBox or manual parsing as in the other tool would be more robust.
+        const commands = normalizedSegments.match(/[A-Z][^A-Z]*/g);
+        if (commands) {
+          commands.forEach(commandStr => {
+            const coords = commandStr.substring(1).trim().split(/[\s,]+/).map(parseFloat).filter(n => !isNaN(n));
+            for (let i = 0; i < coords.length; i += 2) {
+              if (coords[i + 1] !== undefined) {
+                this.converter.updateBounds(coords[i], coords[i + 1]);
+              }
+            }
+          });
+        }
+        return svgPath;
+      }
+    }
+
+    function addZoomAndDrag(svg) {
+      let viewBox = svg.viewBox.baseVal;
+      if (!viewBox) {
+        const vbAttribute = svg.getAttribute('viewBox');
+        if (vbAttribute) {
+          const parts = vbAttribute.split(' ').map(parseFloat);
+          // Create a plain object that mimics viewBox if baseVal is null
+          // Crucially, ensure properties are writable for zoom/pan operations
+          viewBox = {
+            x: parts[0],
+            y: parts[1],
+            width: parts[2],
+            height: parts[3]
+          };
+          // Define setters that update the attribute, so changes to this mock object reflect on the SVG
+          const updateAttribute = () => svg.setAttribute('viewBox', `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`);
+          Object.defineProperty(viewBox, 'x', { get: () => parts[0], set: (val) => { parts[0] = val; updateAttribute(); }, configurable: true });
+          Object.defineProperty(viewBox, 'y', { get: () => parts[1], set: (val) => { parts[1] = val; updateAttribute(); }, configurable: true });
+          Object.defineProperty(viewBox, 'width', { get: () => parts[2], set: (val) => { parts[2] = val; updateAttribute(); }, configurable: true });
+          Object.defineProperty(viewBox, 'height', { get: () => parts[3], set: (val) => { parts[3] = val; updateAttribute(); }, configurable: true });
+        } else {
+          console.error("SVG missing viewBox for zoom/drag.");
+          return;
+        }
+      }
+      let isDragging = false;
+      let startX, startY;
+
+      svg.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        let currentViewBox = svg.viewBox?.baseVal || viewBox;
+        if (!currentViewBox || typeof currentViewBox.width === 'undefined') {
+          console.warn("ViewBox not available for wheel zoom.");
+          return;
+        }
+
+        const zoomFactor = 1.1;
+        const scale = event.deltaY > 0 ? zoomFactor : 1 / zoomFactor;
+        const svgRect = svg.getBoundingClientRect();
+        const svgX = event.clientX - svgRect.left;
+        const svgY = event.clientY - svgRect.top;
+        const point = svg.createSVGPoint();
+        point.x = svgX;
+        point.y = svgY;
+
+        let svgP;
+        try {
+          svgP = point.matrixTransform(svg.getScreenCTM().inverse());
+        } catch (e) { // Fallback if CTM fails
+          currentViewBox.x -= (event.offsetX / svg.clientWidth) * currentViewBox.width * (scale - 1);
+          currentViewBox.y -= (event.offsetY / svg.clientHeight) * currentViewBox.height * (scale - 1);
+          currentViewBox.width *= scale;
+          currentViewBox.height *= scale;
+          return;
+        }
+        currentViewBox.x = svgP.x - (svgP.x - currentViewBox.x) * scale;
+        currentViewBox.y = svgP.y - (svgP.y - currentViewBox.y) * scale;
+        currentViewBox.width *= scale;
+        currentViewBox.height *= scale;
+      });
+
+      svg.addEventListener("mousedown", (event) => { isDragging = true; startX = event.clientX; startY = event.clientY; });
+      svg.addEventListener("mousemove", (event) => {
+        if (isDragging) {
+          let currentViewBox = svg.viewBox?.baseVal || viewBox;
+          if (!currentViewBox || typeof currentViewBox.width === 'undefined') {
+            console.warn("ViewBox not available for drag.");
+            return;
+          }
+          const dx = (startX - event.clientX) * (currentViewBox.width / svg.clientWidth);
+          const dy = (startY - event.clientY) * (currentViewBox.height / svg.clientHeight);
+          currentViewBox.x += dx;
+          currentViewBox.y += dy;
+          startX = event.clientX;
+          startY = event.clientY;
+        }
+      });
+      svg.addEventListener("mouseup", () => { isDragging = false; });
+      svg.addEventListener("mouseleave", () => { isDragging = false; });
+    }
+
+    const svgConverterInstance = new SvgConverter(); // Instance for the viewer
+
+    function convertAndDisplaySVG(viewerXmlString) {
+      svgViewerPanel.innerHTML = ""; // Clear previous SVG
+      try {
+        const svgString = svgConverterInstance.convert(viewerXmlString);
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = svgString;
+        const svgElement = tempDiv.firstChild;
+
+        if (svgElement && svgElement.tagName.toLowerCase() === 'svg') {
+          svgViewerPanel.appendChild(svgElement);
+          if (!svgElement.querySelector("text#no-content-message")) {
+            addZoomAndDrag(svgElement);
+          }
+        } else {
+          svgViewerPanel.innerHTML = `<p style="color: orange;">Could not render preview SVG.</p>`;
+        }
+      } catch (error) {
+        svgViewerPanel.innerHTML = `<p style="color: red;">Error rendering preview: ${error.message}</p>`;
+        console.error("SVG rendering error:", error);
+      }
+    }
+
+    // --- Tool Specific Logic ---
+    function convert3dJsonTo2dTargetXml(jsonData) {
+      if (!jsonData || !Array.isArray(jsonData.shapes)) {
+        console.error("Invalid JSON data structure: 'shapes' array not found.", jsonData);
+        throw new Error("Invalid JSON structure. Expected a 'shapes' array.");
+      }
+
+      let tplElements = "";
+      // Initialize processedFootprints globally for the entire JSON input
+      let processedFootprints = new Map(); // Key: canonical string of 2D points, Value: candidate object
+
+      jsonData.shapes.forEach((shape, shapeIndex) => {
+        if (!shape.v || !shape.faces) {
+          console.warn(`Shape at index ${shapeIndex} ('${shape.name || 'Unnamed'}') is missing vertex or faces data. Skipping.`);
+          return;
+        }
+
+        // No longer need candidatePolygonsForShape here, process directly into global processedFootprints
+        // let candidatePolygonsForShape = []; 
+
+        Object.keys(shape.faces).forEach(faceKey => {
+          const faceData = shape.faces[faceKey];
+          if (!faceData || !Array.isArray(faceData.vertices)) {
+            console.warn(`Face '${faceKey}' in shape '${shape.name || 'Unnamed'}' is invalid or missing vertices. Skipping.`);
+            return;
+          }
+
+          const faceVertexIndices = faceData.vertices;
+          let currentProjected2DPoints = [];
+          let sumZ = 0;
+          let numZ = 0;
+          let allVerticesValidForFace = true;
+
+          faceVertexIndices.forEach((vertexIndex) => {
+            const vertexKeyStr = vertexIndex.toString();
+            if (!shape.v[vertexKeyStr] || !Array.isArray(shape.v[vertexKeyStr]) || shape.v[vertexKeyStr].length < 2) {
+              console.warn(`Vertex ${vertexKeyStr} (index ${vertexIndex}) not found, invalid, or incomplete in shape '${shape.name || 'Unnamed'}' for face '${faceKey}'. Skipping point for this face.`);
+              allVerticesValidForFace = false;
+              return;
+            }
+            currentProjected2DPoints.push({ x: shape.v[vertexKeyStr][0], y: shape.v[vertexKeyStr][1] });
+            if (shape.v[vertexKeyStr].length >= 3) {
+              sumZ += shape.v[vertexKeyStr][2];
+              numZ++;
+            }
+          });
+
+          if (!allVerticesValidForFace || currentProjected2DPoints.length < 3) {
+            return;
+          }
+
+          const uniqueProjectedPoints = [];
+          currentProjected2DPoints.forEach(p => {
+            if (!uniqueProjectedPoints.find(up => up.x === p.x && up.y === p.y)) {
+              uniqueProjectedPoints.push(p);
+            }
+          });
+
+          if (uniqueProjectedPoints.length < 3) {
+            return;
+          }
+
+          const currentFaceAvgZ = (numZ > 0) ? (sumZ / numZ) : -Infinity;
+          const candidateData = {
+            points2DForFootprint: uniqueProjectedPoints,
+            avgZ: currentFaceAvgZ,
+            originalFaceKey: faceKey, // Retain for debugging if needed
+            originalVerticesOrder: currentProjected2DPoints,
+            shapeName: shape.name || `shape_${shapeIndex}` // For potential future use or debugging
+          };
+
+          // Create a canonical representation of the 2D points for footprint comparison.
+          let canonicalKeyPoints = [...candidateData.points2DForFootprint].sort((a, b) => {
+            if (a.x !== b.x) return a.x - b.x;
+            return a.y - b.y;
+          });
+          let footprintKey = canonicalKeyPoints.map(p => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(';');
+
+          if (!processedFootprints.has(footprintKey) || candidateData.avgZ > processedFootprints.get(footprintKey).avgZ) {
+            processedFootprints.set(footprintKey, candidateData);
+          }
+        });
+      });
+
+      // Generate XML for the selected (top-most for each footprint ACROSS ALL SHAPES) polygons
+      processedFootprints.forEach(selectedPolygon => {
+        let polygonPointsAttrs = "";
+        selectedPolygon.originalVerticesOrder.forEach((p, i) => {
+          polygonPointsAttrs += `x${i + 1}="${p.x}" y${i + 1}="${p.y}" `;
+        });
+
+        const defaultForec = "#ff000000";
+        const defaultFillc = "#ffffffff";
+        const lineTypeName = "";
+        const lineTypeWidth = "0.3";
+        const lineTypeWidthType = "1";
+        const lineTypeCap = "BUTT";
+        const lineTypeJoin = "MITER";
+        const lineTypeMiterLimit = "1.0";
+
+        tplElements += `
+<TPL id="0" matFill="mat1" matLine="mat2" deformTypes="Stretch2,Clipping">
+ <geometry>
+  <POLYGON id="0" width="0.0" forec="${defaultForec}" fillc="${defaultFillc}" drawline="1" fill="1" smooth="0" pointsize="4" ${polygonPointsAttrs.trim()}>
+   <LINETYPE name="${lineTypeName}" width="${lineTypeWidth}" widthtype="${lineTypeWidthType}" cap="${lineTypeCap}" join="${lineTypeJoin}" miterlimit="${lineTypeMiterLimit}"/>
+  </POLYGON>
+ </geometry>
+</TPL>`;
+      });
+
+      if (!tplElements) {
+        return '<GROUP id="0" traverse="0" autoarea="1">\n <c></c>\n</GROUP>'; // Empty group if no shapes processed
+      }
+
+      const finalXml = `
+<GROUP id="0" traverse="0" autoarea="1">
+ <c>${tplElements.trim() ? '\n' + tplElements.trim() + '\n ' : ''}</c>
+</GROUP>`;
+      return finalXml.trim();
+    }
+
+    function transformTargetXmlToViewerXml(targetXmlString) {
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(targetXmlString, "text/xml");
+
+      let viewerPolygons = "";
+      let defaultLinetypeWidthForViewer = "0.3"; // Fallback or global default
+
+      const tplNodes = xmlDoc.querySelectorAll("TPL");
+      tplNodes.forEach(tplNode => {
+        const geometryNode = tplNode.querySelector("geometry");
+        if (geometryNode) {
+          const polygonNode = geometryNode.querySelector("POLYGON");
+          if (polygonNode) {
+            let pointsAttrs = "";
+            for (let i = 0; i < polygonNode.attributes.length; i++) {
+              const attr = polygonNode.attributes[i];
+              if (attr.name.match(/^x\d+$/) || attr.name.match(/^y\d+$/)) {
+                pointsAttrs += ` ${attr.name}="${attr.value}"`;
+              }
+            }
+            const forec = polygonNode.getAttribute("forec") || "#ff000000";
+            const fillc = polygonNode.getAttribute("fillc") || "#ffffffff";
+
+            // Extract LINETYPE width for the viewer's structure
+            const lineTypeNode = polygonNode.querySelector("LINETYPE");
+            if (lineTypeNode && lineTypeNode.getAttribute("width")) {
+              defaultLinetypeWidthForViewer = lineTypeNode.getAttribute("width"); // Use specific if available
+            }
+
+            viewerPolygons += `<POLYGON${pointsAttrs} forec="${forec}" fillc="${fillc}" />\n`;
+          }
+          // Could extend to extract PATH elements here if needed in future
+        }
+      });
+
+      // The viewer SvgConverter expects a <LINETYPE> sibling to POLYGONs within <geometry>
+      // So, we add one such LINETYPE with a common or extracted width.
+      return `<geometry>\n  <LINETYPE width="${defaultLinetypeWidthForViewer}" />\n${viewerPolygons}</geometry>`;
+    }
+
+
+    function displayGeneratedXml(xmlString) {
+      if (xmlOutputEditor) {
+        xmlOutputEditor.setValue(xmlString);
+      } else {
+        // Fallback if editor not initialized (should not happen with current flow)
+        const tempTextArea = document.createElement('textarea');
+        tempTextArea.value = xmlString;
+        tempTextArea.style.width = '100%';
+        tempTextArea.style.height = '100%';
+        xmlEditorInnerContainer.innerHTML = '';
+        xmlEditorInnerContainer.appendChild(tempTextArea);
+      }
+    }
+
+    function processAndDisplay(jsonDataString) {
+      userMessageDiv.innerHTML = ""; // Clear initial message
+      try {
+        const jsonData = JSON.parse(jsonDataString);
+        const targetXml = convert3dJsonTo2dTargetXml(jsonData);
+        displayGeneratedXml(targetXml);
+
+        const viewerXml = transformTargetXmlToViewerXml(targetXml);
+        convertAndDisplaySVG(viewerXml);
+        userMessageDiv.innerHTML = `<p style="color: green;">Successfully generated 2D XML and preview.</p>`;
+      } catch (error) {
+        console.error("Error processing JSON or generating XML:", error);
+        displayGeneratedXml(`<!-- Error: ${error.message} -->`);
+        svgViewerPanel.innerHTML = `<p style="color: red;">Error during processing: ${error.message}</p>`;
+        userMessageDiv.innerHTML = `<p style="color: red;">Error: ${error.message}. Check console for details.</p>`;
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      // Initialize Monaco Editor for XML output
+      require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs' } });
+      require(['vs/editor/editor.main'], function () {
+        xmlOutputEditor = monaco.editor.create(xmlEditorInnerContainer, {
+          value: "<!-- Generated 2D XML will appear here -->",
+          language: 'xml',
+          theme: 'vs', // Light theme
+          automaticLayout: true,
+          readOnly: false, // User might want to tweak output slightly before copying
+          wordWrap: 'on',
+          minimap: { enabled: false }
+        });
+      });
+
+      loadJsonButton.addEventListener('click', async () => {
+        try {
+          const jsonText = await navigator.clipboard.readText();
+          if (jsonText) {
+            processAndDisplay(jsonText);
+          } else {
+            userMessageDiv.innerHTML = "<p>Clipboard is empty or permission was denied.</p>";
+          }
+        } catch (err) {
+          console.error('Failed to read clipboard contents: ', err);
+          userMessageDiv.innerHTML = `<p style="color: red;">Error reading from clipboard: ${err.message}</p>`;
+        }
+      });
+
+      copyXmlButton.addEventListener('click', () => {
+        if (xmlOutputEditor) {
+          const xmlToCopy = xmlOutputEditor.getValue();
+          navigator.clipboard.writeText(xmlToCopy).then(() => {
+            userMessageDiv.innerHTML = `<p style="color: green;">XML copied to clipboard!</p>`;
+          }).catch(err => {
+            console.error('Failed to copy XML: ', err);
+            userMessageDiv.innerHTML = `<p style="color: red;">Failed to copy XML: ${err.message}</p>`;
+          });
+        }
+      });
+    });
+  </script>
+</body>
+
+</html>

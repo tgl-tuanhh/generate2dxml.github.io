@@ -1,0 +1,1506 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kitect 3D JSON Studio</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            /* Ngăn cuộn ở body */
+        }
+
+        header {
+            background-color: #333;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            position: relative;
+            /* Đảm bảo absolute positioning của children là relative to header */
+            display: flex;
+            /* Sử dụng Flexbox */
+            justify-content: space-between;
+            /* Căn đều các nhóm controls */
+            align-items: center;
+            /* Căn giữa theo chiều dọc */
+        }
+
+        header button {
+            /* Style chung cho các button trong header */
+            padding: 6px 12px;
+            background-color: #007bff;
+            font-size: 0.9em;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-left: 5px;
+            /* Khoảng cách giữa các button trong cùng một nhóm */
+        }
+
+        header button:hover {
+            background-color: #0056b3;
+        }
+
+        .header-controls-group {
+            display: flex;
+            /* Cho phép các button trong nhóm nằm trên một hàng */
+            align-items: center;
+        }
+
+        /* Có thể thêm style cụ thể cho input-controls và output-controls nếu cần */
+        #create2DXmlBtn {
+            background-color: red;
+        }
+
+        .main-container {
+            display: flex;
+            flex-grow: 1;
+            overflow: hidden;
+            /* Cho phép các panel con cuộn */
+            padding: 10px;
+            gap: 10px;
+        }
+
+        .panel {
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            /* Cho phép cuộn nội dung panel */
+        }
+
+        #shapes-panel {
+            flex: 0 0 250px;
+            /* Độ rộng cố định cho panel shapes */
+        }
+
+        #editor-panel {
+            flex-grow: 1;
+            /* Panel editor chiếm phần còn lại */
+        }
+
+        #viewer-3d-panel {
+            flex-grow: 2;
+            /* Cho panel 3D chiếm nhiều không gian hơn */
+            min-width: 300px;
+            /* Đảm bảo có không gian tối thiểu cho view 3D */
+            position: relative;
+            /* Để canvas có thể được định vị tuyệt đối bên trong */
+        }
+
+        #viewer-3d-panel canvas {
+            display: block;
+            /* Loại bỏ khoảng trắng thừa bên dưới canvas */
+            width: 100% !important;
+            /* Ghi đè style mặc định của three.js nếu có */
+            height: 100% !important;
+        }
+
+        textarea {
+            width: calc(100% - 10px);
+            /* Điều chỉnh để padding không làm vỡ layout */
+            flex-grow: 1;
+            margin-top: 10px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            padding: 5px;
+            font-family: monospace;
+            resize: none;
+            /* Không cho phép resize textarea */
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-top: 5px;
+            margin-bottom: 10px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        .shape-item {
+            padding: 8px;
+            border: 1px solid #eee;
+            border-radius: 3px;
+            margin-bottom: 5px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .shape-item:hover,
+        .shape-item.selected {
+            background-color: #e9ecef;
+        }
+
+        .shape-item button {
+            background-color: #dc3545;
+            padding: 3px 6px;
+            font-size: 0.8em;
+            margin: 0;
+        }
+
+        .shape-item button:hover {
+            background-color: #c82333;
+        }
+
+        .section {
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 3px;
+        }
+
+        .section h3 {
+            margin-top: 0;
+            font-size: 1.1em;
+            color: #333;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 3px;
+            font-size: 0.9em;
+            color: #555;
+        }
+
+        input[type="text"],
+        input[type="number"] {
+            width: calc(100% - 12px);
+            /* width - padding */
+            padding: 5px;
+            margin-bottom: 8px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+
+        .vertex-entry,
+        .face-entry,
+        .line-entry {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+
+        .vertex-entry input[type="number"] {
+            width: 50px;
+        }
+
+        .face-entry input[type="text"] {
+            flex-grow: 1;
+        }
+
+        .vertex-list,
+        .face-list,
+        .line-list {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            padding: 5px;
+            margin-bottom: 10px;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Kitect 3D JSON Studio</h1>
+        <div class="header-controls-group input-controls">
+            <input type="text" id="objectNameInput" placeholder="Nhập Object Name (ví dụ: PFHP-PILLAR-B)"
+                style="margin-right: 10px; padding: 6px; border-radius: 3px; border: 1px solid #ccc;">
+            <button id="importJsonBtn">Đọc Clipboard</button>
+        </div>
+        <div class="header-controls-group output-controls">
+            <button id="copyLineGeometryBtn">Copy Line Geometry</button>
+            <button id="copyStdGeometryBtn">Copy Std Geometry</button>
+            <button id="copyLineMeshBtn">Copy Line Mesh</button>
+            <button id="copyStdMeshBtn">Copy Std Mesh</button>
+            <button id="create2DXmlBtn" onclick="window.open('./generate-2d-xml.html', '_blank')">Create 2D XML</button>
+        </div>
+    </header>
+    <div class="main-container">
+        <div id="shapes-panel" class="panel">
+            <h2>Shapes</h2>
+            <button id="addShapeBtn">Thêm Shape Mới</button>
+            <div id="shapesListContainer">
+                <!-- Danh sách shapes sẽ được thêm vào đây bằng JavaScript -->
+            </div>
+            <div id="noShapeSelectedMsg">
+                <p>Vui lòng chọn một shape từ danh sách hoặc thêm shape mới để bắt đầu chỉnh sửa.</p>
+            </div>
+        </div>
+
+        <div id="editor-panel" class="panel">
+            <h2>Editor</h2>
+            <div id="shapeEditorContainer" class="hidden">
+                <div class="section">
+                    <h3>Thông tin Shape</h3>
+                    <p><strong>Tên Shape (Line Mode):</strong> <span id="generatedShapeNameLine"></span></p>
+                    <p><strong>Tên Shape (Std Mode):</strong> <span id="generatedShapeNameStd"></span></p>
+
+                    <label for="stdMaterialInput">Std Material:</label>
+                    <input type="text" id="stdMaterialInput" placeholder="Ví dụ: R110-0">
+
+                    <h4>Deform Types</h4>
+                    <div style="margin-bottom: 10px;">
+                        <label style="display: inline-block; margin-right: 10px;">
+                            <input type="checkbox" id="deformStretch2Checkbox"> Stretch2
+                        </label>
+                        <label style="display: inline-block;">
+                            <input type="checkbox" id="deformClippingCheckbox"> Clipping
+                        </label>
+                    </div>
+                    <div style="margin-bottom: 10px; font-size: 0.9em; color: #333;">
+                        <strong>Current Deform Types:</strong> <span id="currentDeformTypesText"></span>
+                    </div>
+
+                    <h4>Custom Pivot (Tọa độ Local của Shape)</h4>
+                    <div style="display: flex; gap: 5px; margin-bottom: 10px;">
+                        <div style="flex: 1;">
+                            <label for="pivotX">Pivot X:</label>
+                            <input type="number" id="pivotX" value="0" step="1">
+                        </div>
+                        <div style="flex: 1;">
+                            <label for="pivotY">Pivot Y:</label>
+                            <input type="number" id="pivotY" value="0" step="1">
+                        </div>
+                        <div style="flex: 1;">
+                            <label for="pivotZ">Pivot Z:</label>
+                            <input type="number" id="pivotZ" value="0" step="1">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>Vertices (v)</h3>
+                    <button id="addVertexBtn">Thêm Vertex</button>
+                    <div class="vertex-list" id="verticesList">
+                        <!-- Vertices sẽ được thêm vào đây -->
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>Faces</h3>
+                    <label for="faceVertices">Vertices (chỉ số, cách nhau bởi dấu phẩy):</label>
+                    <input type="text" id="faceVertices" placeholder="Ví dụ: 0,1,13,12">
+                    <button id="addFaceBtn">Thêm Face</button>
+                    <div class="face-list" id="facesListContainer">
+                        <!-- Faces sẽ được thêm vào đây -->
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>Lines</h3>
+                    <label for="lineVerticesInput">Vertices (ID đỉnh 1, ID đỉnh 2, cách nhau bởi dấu phẩy):</label>
+                    <input type="text" id="lineVerticesInput" placeholder="Ví dụ: 0,1">
+                    <button id="addLineBtn">Thêm Line</button>
+                    <div class="line-list" id="linesListContainer">
+                        <!-- Lines sẽ được thêm vào đây -->
+                    </div>
+                </div>
+
+                <div class="section" id="transformationsSection">
+                    <h3>Phép biến đổi (Transformations)</h3>
+
+                    <div class="subsection">
+                        <h4>Tịnh tiến (Translate)</h4>
+                        <label for="translateX">Delta X:</label>
+                        <input type="number" id="translateX" value="0" step="1">
+                        <label for="translateY">Delta Y:</label>
+                        <input type="number" id="translateY" value="0" step="1">
+                        <label for="translateZ">Delta Z:</label>
+                        <input type="number" id="translateZ" value="0" step="1">
+                        <button id="applyTranslateBtn">Áp dụng Tịnh tiến</button>
+                    </div>
+
+                    <div class="subsection">
+                        <h4>Xoay quanh tâm Shape (Rotate around Shape Center)</h4>
+                        <p style="font-size:0.8em; color:#555;">Đơn vị: Độ. Thứ tự xoay: X -> Y -> Z.</p>
+                        <label for="rotateX">Góc X:</label>
+                        <input type="number" id="rotateX" value="0" step="1">
+                        <label for="rotateY">Góc Y:</label>
+                        <input type="number" id="rotateY" value="0" step="1">
+                        <label for="rotateZ">Góc Z:</label>
+                        <input type="number" id="rotateZ" value="0" step="1">
+                        <button id="applyRotateBtn">Áp dụng Xoay</button>
+                    </div>
+
+                    <div class="subsection">
+                        <h4>Lật qua tâm Shape (Flip around Shape Center)</h4>
+                        <button id="flipXBtn">Lật qua trục X (YZ plane)</button>
+                        <button id="flipYBtn">Lật qua trục Y (XZ plane)</button>
+                        <button id="flipZBtn">Lật qua trục Z (XY plane)</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <div id="viewer-3d-panel" class="panel">
+            <h2>3D View</h2>
+            <div id="threejs-canvas-container" style="width: 100%; height: calc(100% - 40px);">
+                <!-- Canvas cho Three.js sẽ được thêm vào đây -->
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineSegmentsGeometry.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineMaterial.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineSegments2.js"></script>
+    <script>
+        // State của ứng dụng
+        let shapesData = [];
+        let selectedShapeId = null; // Sẽ lưu _internalId của shape được chọn
+        let currentJsonString = ''; // Lưu trữ chuỗi JSON hiện tại (chủ yếu cho Line Geometry và 3D view)
+        let currentObjectName = ''; // Lưu trữ Object Name
+
+        // DOM Elements
+        const addShapeBtn = document.getElementById('addShapeBtn');
+        const shapesListContainer = document.getElementById('shapesListContainer');
+        const importJsonBtn = document.getElementById('importJsonBtn');
+        const copyLineGeometryBtn = document.getElementById('copyLineGeometryBtn');
+        const copyStdGeometryBtn = document.getElementById('copyStdGeometryBtn');
+        const copyLineMeshBtn = document.getElementById('copyLineMeshBtn');
+        const copyStdMeshBtn = document.getElementById('copyStdMeshBtn');
+        const objectNameInput = document.getElementById('objectNameInput');
+
+        const shapeEditorContainer = document.getElementById('shapeEditorContainer');
+        const noShapeSelectedMsg = document.getElementById('noShapeSelectedMsg');
+        const generatedShapeNameLine = document.getElementById('generatedShapeNameLine');
+        const generatedShapeNameStd = document.getElementById('generatedShapeNameStd');
+        const stdMaterialInput = document.getElementById('stdMaterialInput');
+
+        const addVertexBtn = document.getElementById('addVertexBtn');
+        const verticesListContainer = document.getElementById('verticesList');
+
+        const addFaceBtn = document.getElementById('addFaceBtn');
+        const faceVerticesInput = document.getElementById('faceVertices');
+        const facesListContainer = document.getElementById('facesListContainer');
+
+        const addLineBtn = document.getElementById('addLineBtn');
+        const lineVerticesInput = document.getElementById('lineVerticesInput');
+        const linesListContainer = document.getElementById('linesListContainer');
+
+        // Transformation UI Elements
+        const translateXInput = document.getElementById('translateX');
+        const translateYInput = document.getElementById('translateY');
+        const translateZInput = document.getElementById('translateZ');
+        const applyTranslateBtn = document.getElementById('applyTranslateBtn');
+        const rotateXInput = document.getElementById('rotateX');
+        const rotateYInput = document.getElementById('rotateY');
+        const rotateZInput = document.getElementById('rotateZ');
+        const applyRotateBtn = document.getElementById('applyRotateBtn');
+        const flipXBtn = document.getElementById('flipXBtn');
+        const flipYBtn = document.getElementById('flipYBtn');
+        const flipZBtn = document.getElementById('flipZBtn');
+
+        const currentDeformTypesText = document.getElementById('currentDeformTypesText');
+
+        const threeJsCanvasContainer = document.getElementById('threejs-canvas-container');
+
+        // Three.js specific variables
+        let scene, camera, renderer, controls, shapesGroup;
+        let vertexLabelsGroup; // Group cho các nhãn ID đỉnh
+        let threeShapeObjects = {}; // Map từ shape._internalId sang { group, lineMaterial, faceMaterial, labelMaterial }
+
+        // Materials for highlighting
+        const NORMAL_LINE_COLOR = 0x0000ff;
+        const HIGHLIGHTED_LINE_COLOR = 0x007bff; // Changed to Blue
+        const NORMAL_FACE_COLOR = 0xcccccc;
+        const HIGHLIGHTED_FACE_COLOR = 0xffd700; // Gold
+        const NORMAL_LABEL_BG_COLOR = { r: 50, g: 50, b: 50, a: 0.7 };
+        const HIGHLIGHTED_LABEL_BG_COLOR = { r: 255, g: 165, b: 0, a: 0.9 }; // Orange background for labels
+
+        // Thêm lại các khai báo biến bị thiếu
+        const deformStretch2Checkbox = document.getElementById('deformStretch2Checkbox');
+        const deformClippingCheckbox = document.getElementById('deformClippingCheckbox'); // ID này đã được đổi từ deformClipCheckbox
+        const pivotXInput = document.getElementById('pivotX');
+        const pivotYInput = document.getElementById('pivotY');
+        const pivotZInput = document.getElementById('pivotZ');
+
+        // --- Helper function to create text sprites (moved to a more global scope) ---
+        function createTextSprite(message, parameters) {
+            parameters = parameters || {};
+            const fontface = parameters.fontface || 'Arial';
+            const internalFontsize = parameters.internalFontsize || 32; // Fontsize vẽ lên canvas
+            const borderThickness = parameters.borderThickness || 2;
+            const borderColor = parameters.borderColor || { r: 0, g: 0, b: 0, a: 1.0 };
+            const backgroundColor = parameters.backgroundColor || { r: 255, g: 255, b: 255, a: 0.8 };
+            const textColor = parameters.textColor || { r: 0, g: 0, b: 0, a: 1.0 };
+
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+
+            context.font = 'Bold ' + internalFontsize + 'px ' + fontface;
+            const metrics = context.measureText(message);
+            const textWidth = metrics.width;
+
+            canvas.width = textWidth + borderThickness * 2 + 20; // Thêm padding cho canvas
+            canvas.height = internalFontsize * 1.4 + borderThickness * 2;
+
+            context.font = 'Bold ' + internalFontsize + 'px ' + fontface;
+            context.fillStyle = `rgba(${backgroundColor.r},${backgroundColor.g},${backgroundColor.b},${backgroundColor.a})`;
+            context.strokeStyle = `rgba(${borderColor.r},${borderColor.g},${borderColor.b},${borderColor.a})`;
+            context.lineWidth = borderThickness;
+
+            context.fillStyle = `rgba(${textColor.r},${textColor.g},${textColor.b},${textColor.a})`;
+            context.fillText(message, borderThickness + 5, internalFontsize + borderThickness);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.minFilter = THREE.LinearFilter;
+            texture.magFilter = THREE.LinearFilter; // Thêm magFilter cho nhất quán
+            texture.wrapS = THREE.ClampToEdgeWrapping;
+            texture.wrapT = THREE.ClampToEdgeWrapping;
+
+            const spriteMaterial = new THREE.SpriteMaterial({
+                map: texture,
+                sizeAttenuation: false, // THAY ĐỔI Ở ĐÂY: kích thước không đổi khi zoom
+                transparent: true, // Cho phép background trong suốt nếu alpha < 1
+                alphaTest: 0.1 // Để các pixel gần như trong suốt hoàn toàn không được vẽ
+            });
+            const sprite = new THREE.Sprite(spriteMaterial);
+
+            // Điều chỉnh scale để sprite có chiều cao mong muốn 
+            // Khi sizeAttenuation = false, scale này sẽ trực tiếp ảnh hưởng đến kích thước hiển thị trên màn hình.
+            // Bạn có thể cần điều chỉnh giá trị này để đạt được kích thước mong muốn.
+            const desiredScreenHeightFactor = parameters.worldHeight || 50; // Có thể cần đổi tên và giá trị
+            // Tạm thời giữ nguyên logic scale cũ, nhưng có thể cần điều chỉnh lại 'desiredScreenHeightFactor'
+            // hoặc cách tính toán scale cho phù hợp với sizeAttenuation = false.
+            // Ví dụ, bạn có thể muốn đặt một scale cố định:
+            // sprite.scale.set(50, 25, 1); // Ví dụ: rộng 50 units, cao 25 units trên màn hình (cần thử nghiệm)
+            sprite.scale.set((desiredScreenHeightFactor * canvas.width / canvas.height), desiredScreenHeightFactor, 1.0);
+
+            return sprite;
+        }
+
+        // --- UUID Generation ---
+        function generateUUID() {
+            // Basic UUID v4 generator
+            return ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c =>
+                (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+            );
+        }
+
+        // --- 3D Viewer Initialization ---
+        function init3DViewer() {
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xeeeeee);
+
+            // Camera
+            const aspect = threeJsCanvasContainer.clientWidth / threeJsCanvasContainer.clientHeight;
+            camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 10000);
+            camera.position.set(100, 100, 500); // Điều chỉnh vị trí camera cho phù hợp với dữ liệu của bạn
+            camera.lookAt(0, 0, 0);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(threeJsCanvasContainer.clientWidth, threeJsCanvasContainer.clientHeight);
+            threeJsCanvasContainer.appendChild(renderer.domElement);
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(200, 500, 300);
+            scene.add(directionalLight);
+
+            // Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false;
+            controls.minDistance = 10;
+            controls.maxDistance = 5000;
+            controls.addEventListener('change', render3DScene); // render khi có tương tác
+
+            // Shapes Group - to hold all dynamic shapes for easy clearing
+            shapesGroup = new THREE.Group();
+            scene.add(shapesGroup);
+
+            vertexLabelsGroup = new THREE.Group(); // Khởi tạo group cho nhãn
+            scene.add(vertexLabelsGroup);
+
+            // Axes Helper
+            const mainAxesHelper = new THREE.AxesHelper(10000); // Tăng chiều dài trục chính
+            scene.add(mainAxesHelper);
+
+            // Grid/Ticks for Axes
+            const ticksGroup = new THREE.Group();
+            const tickLength = 20; // Độ dài của mỗi vạch tick
+            const tickStep = 100;  // Khoảng cách giữa các vạch tick
+            const axisLength = 10000; // Phải khớp với AxesHelper ở trên
+            const tickMaterialX = new THREE.LineBasicMaterial({ color: 0xff0000 }); // Red for X ticks
+            const tickMaterialY = new THREE.LineBasicMaterial({ color: 0x00ff00 }); // Green for Y ticks
+            const tickMaterialZ = new THREE.LineBasicMaterial({ color: 0x0000ff }); // Blue for Z ticks
+
+            function createTicksForAxis(targetAxis, length, step, tickSize, material) {
+                const points = [];
+                for (let i = -length; i <= length; i += step) {
+                    if (i === 0) continue; // Bỏ qua gốc tọa độ
+
+                    if (targetAxis === 'x') {
+                        points.push(new THREE.Vector3(i, -tickSize / 2, 0));
+                        points.push(new THREE.Vector3(i, tickSize / 2, 0));
+                        points.push(new THREE.Vector3(i, 0, -tickSize / 2));
+                        points.push(new THREE.Vector3(i, 0, tickSize / 2));
+                    } else if (targetAxis === 'y') {
+                        points.push(new THREE.Vector3(-tickSize / 2, i, 0));
+                        points.push(new THREE.Vector3(tickSize / 2, i, 0));
+                        points.push(new THREE.Vector3(0, i, -tickSize / 2));
+                        points.push(new THREE.Vector3(0, i, tickSize / 2));
+                    } else if (targetAxis === 'z') {
+                        points.push(new THREE.Vector3(-tickSize / 2, 0, i));
+                        points.push(new THREE.Vector3(tickSize / 2, 0, i));
+                        points.push(new THREE.Vector3(0, -tickSize / 2, i));
+                        points.push(new THREE.Vector3(0, tickSize / 2, i));
+                    }
+                }
+                if (points.length > 0) {
+                    const tickGeometry = new THREE.BufferGeometry().setFromPoints(points);
+                    const ticks = new THREE.LineSegments(tickGeometry, material);
+                    ticksGroup.add(ticks);
+                }
+            }
+
+            createTicksForAxis('x', axisLength, tickStep, tickLength, tickMaterialX);
+            createTicksForAxis('y', axisLength, tickStep, tickLength, tickMaterialY);
+            createTicksForAxis('z', axisLength, tickStep, tickLength, tickMaterialZ);
+            scene.add(ticksGroup);
+
+            // Animation loop for controls damping
+            function animate() {
+                requestAnimationFrame(animate);
+                controls.update(); // only required if controls.enableDamping or controls.autoRotate are set to true
+                render3DScene();
+            }
+            animate();
+
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize, false);
+            onWindowResize(); // Initial call to set size
+        }
+
+        function onWindowResize() {
+            if (!renderer || !camera || !threeJsCanvasContainer) return;
+            const newWidth = threeJsCanvasContainer.clientWidth;
+            const newHeight = threeJsCanvasContainer.clientHeight;
+
+            camera.aspect = newWidth / newHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(newWidth, newHeight);
+            update3DView();
+        }
+
+        function render3DScene() {
+            if (renderer && scene && camera) {
+                renderer.render(scene, camera);
+            }
+        }
+
+        // --- Update 3D View ---
+        function update3DView() {
+            if (!scene || !shapesGroup) return;
+
+            // Clear previous shapes and labels first
+            while (shapesGroup.children.length > 0) {
+                shapesGroup.remove(shapesGroup.children[0]);
+            }
+            shapesGroup.clear(); // Đảm bảo group rỗng
+            threeShapeObjects = {}; // Reset map object
+
+            while (vertexLabelsGroup && vertexLabelsGroup.children.length > 0) {
+                vertexLabelsGroup.remove(vertexLabelsGroup.children[0]);
+            }
+            if (vertexLabelsGroup) vertexLabelsGroup.clear();
+
+
+            shapesData.forEach(shape => {
+                const isSelected = shape._internalId === selectedShapeId;
+
+                const shapeSpecificGroup = new THREE.Group(); // Group riêng cho mỗi shape
+                shapesGroup.add(shapeSpecificGroup); // Thêm group của shape vào group chính
+
+                const currentLineMaterial = new THREE.LineBasicMaterial({
+                    color: isSelected ? HIGHLIGHTED_LINE_COLOR : NORMAL_LINE_COLOR,
+                    depthTest: false, // Để line không bị ẩn bởi face nếu trùng
+                });
+                const currentFaceMaterial = new THREE.MeshStandardMaterial({
+                    color: isSelected ? HIGHLIGHTED_FACE_COLOR : NORMAL_FACE_COLOR,
+                    side: THREE.DoubleSide,
+                    metalness: 0.1,
+                    roughness: 0.75,
+                    depthTest: true
+                });
+                const currentLabelBackgroundColor = isSelected ? HIGHLIGHTED_LABEL_BG_COLOR : NORMAL_LABEL_BG_COLOR;
+                const currentLabelTextColor = isSelected ? { r: 0, g: 0, b: 0, a: 1 } : { r: 255, g: 255, b: 255, a: 1 };
+
+
+                // Lưu trữ các đối tượng three.js của shape này để có thể highlight sau
+                threeShapeObjects[shape._internalId] = {
+                    group: shapeSpecificGroup, // Group chứa tất cả elements của shape này
+                    lines: null, // Sẽ được gán khi tạo LineSegments
+                    mesh: null,  // Sẽ được gán khi tạo Mesh
+                    labels: [] // Mảng các sprite nhãn
+                };
+
+                if (!shape.v || Object.keys(shape.v).length === 0) return;
+
+                const vertexMap = {};
+                const points = [];
+                Object.keys(shape.v).sort((a, b) => parseInt(a) - parseInt(b)).forEach((key, index) => {
+                    const coords = shape.v[key];
+                    const pivot = shape.pivot || [0, 0, 0]; // Lấy pivot, mặc định [0,0,0]
+                    const vertexPosition = new THREE.Vector3(
+                        coords[0] + pivot[0],
+                        coords[1] + pivot[1],
+                        coords[2] + pivot[2]
+                    );
+                    points.push(vertexPosition);
+                    vertexMap[key] = index;
+
+                    const currentWorldHeight = 0.1; // Đặt lại kích thước nhãn mong muốn trên màn hình
+                    const labelSprite = createTextSprite(key.toString(), {
+                        internalFontsize: 32,    // Giữ nguyên font size cho texture sắc nét
+                        worldHeight: currentWorldHeight,
+                        backgroundColor: currentLabelBackgroundColor,
+                        textColor: currentLabelTextColor,
+                        fontface: 'monospace'
+                    });
+                    labelSprite.position.copy(vertexPosition);
+                    labelSprite.position.y += (currentWorldHeight * 0.5) + 2;
+                    if (isSelected) { // Chỉ thêm label vào group của shape nếu shape được chọn
+                        shapeSpecificGroup.add(labelSprite);
+                    }
+                    threeShapeObjects[shape._internalId].labels.push(labelSprite); // Vẫn lưu trữ tham chiếu đến label
+                });
+
+                if (points.length === 0) return;
+
+                if (shape.lines && shape.lines.length > 0) {
+                    const linePointsForBuffer = []; // For existing LineBasicMaterial if not selected
+                    const flatLineVertices = [];   // For LineMaterial if selected
+
+                    shape.lines.forEach(line => {
+                        if (vertexMap[line.v1.toString()] !== undefined && vertexMap[line.v2.toString()] !== undefined) {
+                            const p1 = points[vertexMap[line.v1.toString()]];
+                            const p2 = points[vertexMap[line.v2.toString()]];
+
+                            linePointsForBuffer.push(p1);
+                            linePointsForBuffer.push(p2);
+
+                            flatLineVertices.push(p1.x, p1.y, p1.z);
+                            flatLineVertices.push(p2.x, p2.y, p2.z);
+                        }
+                    });
+
+                    if (flatLineVertices.length > 0) {
+                        if (isSelected) {
+                            const lineGeo = new THREE.LineSegmentsGeometry();
+                            lineGeo.setPositions(flatLineVertices);
+
+                            const lineMat = new THREE.LineMaterial({
+                                color: HIGHLIGHTED_LINE_COLOR,
+                                linewidth: 3, // Độ dày của line (ví dụ: 3 pixels)
+                                resolution: new THREE.Vector2(threeJsCanvasContainer.clientWidth, threeJsCanvasContainer.clientHeight),
+                                depthTest: false,
+                                dashed: false
+                            });
+
+                            const lineSegmentsFat = new THREE.LineSegments2(lineGeo, lineMat);
+                            shapeSpecificGroup.add(lineSegmentsFat);
+                            threeShapeObjects[shape._internalId].lines = lineSegmentsFat;
+                        } else {
+                            // Logic cũ cho các shape không được chọn
+                            const lineGeometry = new THREE.BufferGeometry().setFromPoints(linePointsForBuffer);
+                            const lineSegments = new THREE.LineSegments(lineGeometry, currentLineMaterial); // currentLineMaterial đã được định nghĩa ở trên
+                            shapeSpecificGroup.add(lineSegments);
+                            threeShapeObjects[shape._internalId].lines = lineSegments;
+                        }
+                    }
+                }
+
+                if (shape.faces && Object.keys(shape.faces).length > 0) {
+                    const faceIndices = [];
+                    Object.values(shape.faces).forEach(face => {
+                        const vIndices = face.vertices;
+                        const mappedVIndices = vIndices.map(vi => vertexMap[vi.toString()]).filter(vi => vi !== undefined);
+
+                        if (mappedVIndices.length >= 3) {
+                            for (let i = 1; i < mappedVIndices.length - 1; i++) {
+                                faceIndices.push(mappedVIndices[0], mappedVIndices[i], mappedVIndices[i + 1]);
+                            }
+                        }
+                    });
+
+                    if (faceIndices.length > 0) {
+                        const faceGeometry = new THREE.BufferGeometry().setFromPoints(points);
+                        faceGeometry.setIndex(faceIndices);
+                        faceGeometry.computeVertexNormals();
+                        const mesh = new THREE.Mesh(faceGeometry, currentFaceMaterial);
+                        shapeSpecificGroup.add(mesh); // Thêm mesh vào group của shape
+                        threeShapeObjects[shape._internalId].mesh = mesh;
+                    }
+                }
+            });
+            render3DScene();
+        }
+
+        // --- Render Functions ---
+        function renderShapesList() {
+            shapesListContainer.innerHTML = '';
+            if (shapesData.length === 0) {
+                shapesListContainer.innerHTML = '<p>Chưa có shape nào.</p>';
+            } else {
+                shapesData.forEach((shape, index) => {
+                    const shapeItem = document.createElement('div');
+                    shapeItem.classList.add('shape-item');
+                    if (shape._internalId === selectedShapeId) {
+                        shapeItem.classList.add('selected');
+                    }
+                    // Hiển thị tên theo mode "Line" trong danh sách cho nhất quán, hoặc có thể chọn một mode cố định
+                    const displayIdentifiers = generateShapeIdentifiers(index, "Line");
+                    shapeItem.textContent = `Shape: ${displayIdentifiers.name}`;
+                    shapeItem.dataset.shapeId = shape._internalId; // Vẫn dùng _internalId để chọn
+
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.innerHTML = '🗑️';
+                    deleteBtn.title = 'Xóa Shape';
+                    deleteBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        deleteShape(shape._internalId);
+                    };
+
+                    const copyShapeBtn = document.createElement('button');
+                    copyShapeBtn.innerHTML = '📋';
+                    copyShapeBtn.title = 'Sao chép Shape';
+                    copyShapeBtn.style.backgroundColor = '#28a745';
+                    copyShapeBtn.style.marginLeft = '5px';
+                    copyShapeBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        copyShape(shape._internalId);
+                    };
+
+                    shapeItem.appendChild(copyShapeBtn);
+                    shapeItem.appendChild(deleteBtn);
+
+                    shapeItem.onclick = () => {
+                        selectShape(shape._internalId);
+                    };
+                    shapesListContainer.appendChild(shapeItem);
+                });
+            }
+            // Không cần gọi update3DView ở đây nữa vì selectShape sẽ làm điều đó thông qua renderJsonOutput
+        }
+
+        function renderJsonOutput() {
+            // Hàm này giờ chỉ tạo JSON cho Line Geometry và cập nhật 3D view
+            currentJsonString = generateJsonString(true); // true để bao gồm lines
+            update3DView(); // Update 3D view whenever JSON output changes
+        }
+
+        function generateJsonString(includeLines) {
+            const shapesForJson = shapesData.map((s, index) => {
+                const { _internalId, pivot, stdMaterial, deformTypes, ...shapeRest } = s; // Lấy thêm stdMaterial, deformTypes
+                const currentPivot = pivot && Array.isArray(pivot) && pivot.length === 3 ? pivot : [0, 0, 0];
+
+                const mode = includeLines ? "Line" : "Std";
+                const identifiers = generateShapeIdentifiers(index, mode);
+
+                const worldVertices = {};
+                if (shapeRest.v) {
+                    Object.keys(shapeRest.v).forEach(vKey => {
+                        const localCoord = shapeRest.v[vKey];
+                        worldVertices[vKey] = [
+                            parseFloat((localCoord[0] + currentPivot[0]).toFixed(1)),
+                            parseFloat((localCoord[1] + currentPivot[1]).toFixed(1)),
+                            parseFloat((localCoord[2] + currentPivot[2]).toFixed(1))
+                        ];
+                    });
+                }
+
+                const outputShape = {
+                    ...shapeRest,
+                    name: identifiers.name, // Sử dụng tên được tạo động
+                    uuid: identifiers.uuid, // Sử dụng UUID được tạo động
+                    v: worldVertices,
+                    lines: includeLines ? (shapeRest.lines || []) : []
+                };
+                // Không thêm stdMaterial và deformTypes vào đây vì đây là JSON cho Geometry
+                return outputShape;
+            });
+
+            const output = {
+                shapes: shapesForJson
+            };
+            return JSON.stringify(output, null, 2);
+        }
+
+        function renderSelectedShapeEditor() {
+            if (!selectedShapeId) {
+                shapeEditorContainer.classList.add('hidden');
+                noShapeSelectedMsg.classList.remove('hidden');
+                if (currentDeformTypesText) currentDeformTypesText.textContent = 'None';
+                return;
+            }
+
+            shapeEditorContainer.classList.remove('hidden');
+            noShapeSelectedMsg.classList.add('hidden');
+
+            const shape = shapesData.find(s => s._internalId === selectedShapeId);
+            if (!shape) return; // Should not happen
+
+            const shapeIndex = shapesData.findIndex(s => s._internalId === selectedShapeId);
+            if (shapeIndex === -1) return; // Should not happen
+
+            const lineIdentifiers = generateShapeIdentifiers(shapeIndex, "Line");
+            const stdIdentifiers = generateShapeIdentifiers(shapeIndex, "Std");
+
+            generatedShapeNameLine.textContent = lineIdentifiers.name;
+            generatedShapeNameStd.textContent = stdIdentifiers.name;
+            // UUID hiển thị có thể lấy theo Line mode hoặc làm rõ hơn
+            // generatedShapeUuid.textContent = `${lineIdentifiers.uuid} (Line Mode) / ${stdIdentifiers.uuid} (Std Mode)`; // ĐÃ XÓA
+
+            stdMaterialInput.value = shape.stdMaterial || '';
+
+            // Xử lý Deform Types Checkboxes
+            shape.deformTypes = shape.deformTypes || [];
+            deformStretch2Checkbox.checked = shape.deformTypes.includes('Stretch2');
+            deformClippingCheckbox.checked = shape.deformTypes.includes('Clipping');
+            updateCurrentDeformTypesText(shape.deformTypes); // Cập nhật text hiển thị
+
+            // Hiển thị và xử lý pivot
+            shape.pivot = shape.pivot || [0, 0, 0]; // Đảm bảo pivot tồn tại
+            pivotXInput.value = shape.pivot[0];
+            pivotYInput.value = shape.pivot[1];
+            pivotZInput.value = shape.pivot[2];
+
+            renderVerticesList(shape);
+            renderFacesList(shape);
+            renderLinesList(shape);
+            renderJsonOutput();
+        }
+
+        function renderVerticesList(shape) {
+            verticesListContainer.innerHTML = '';
+            if (!shape || !shape.v) return;
+
+            Object.entries(shape.v).forEach(([key, coords], index) => {
+                const vEntry = document.createElement('div');
+                vEntry.classList.add('vertex-entry');
+
+                const idLabel = document.createElement('span');
+                idLabel.textContent = `ID(${key}):`;
+
+                // Gộp thành 1 input
+                const coordsInput = document.createElement('input');
+                coordsInput.type = 'text';
+                coordsInput.value = coords.join(','); // Hiển thị dạng X,Y,Z
+                coordsInput.dataset.vertexKey = key;
+                coordsInput.style.flexGrow = 1; // Cho input chiếm nhiều không gian hơn
+                coordsInput.onchange = handleVertexCoordsChange; // Hàm xử lý mới
+
+                const copyBtn = document.createElement('button');
+                copyBtn.innerHTML = '📋';
+                copyBtn.title = 'Sao chép Vertex';
+                copyBtn.style.backgroundColor = '#17a2b8';
+                copyBtn.onclick = () => copyVertex(key);
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.textContent = '🗑️';
+                deleteBtn.title = 'Xóa Vertex';
+                deleteBtn.style.backgroundColor = '#ffc107';
+                deleteBtn.onclick = () => deleteVertex(key);
+
+                vEntry.append(idLabel, coordsInput, copyBtn, deleteBtn);
+                verticesListContainer.appendChild(vEntry);
+            });
+        }
+
+        function renderFacesList(shape) {
+            facesListContainer.innerHTML = '';
+            if (!shape || !shape.faces) return;
+
+            Object.entries(shape.faces).forEach(([key, faceData]) => {
+                const fEntry = document.createElement('div');
+                fEntry.classList.add('face-entry');
+                fEntry.textContent = `Face ID(${key}): ${faceData.vertices.join(', ')}`;
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.textContent = '🗑️';
+                deleteBtn.title = 'Xóa Face';
+                deleteBtn.style.backgroundColor = '#ffc107';
+                deleteBtn.onclick = () => deleteFace(key);
+
+                fEntry.appendChild(deleteBtn);
+                facesListContainer.appendChild(fEntry);
+            });
+        }
+
+        function renderLinesList(shape) {
+            linesListContainer.innerHTML = '';
+            if (!shape || !shape.lines) return;
+
+            shape.lines.forEach((line, index) => {
+                const lEntry = document.createElement('div');
+                lEntry.classList.add('line-entry');
+                lEntry.textContent = `Line: v${line.v1} - v${line.v2}`;
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.textContent = '🗑️';
+                deleteBtn.title = 'Xóa Line';
+                deleteBtn.style.backgroundColor = '#ffc107';
+                deleteBtn.onclick = () => deleteLine(index);
+
+                lEntry.appendChild(deleteBtn);
+                linesListContainer.appendChild(lEntry);
+            });
+        }
+
+
+        // --- Event Handlers & Logic ---
+        addShapeBtn.onclick = () => {
+            const newShapeInternalId = Date.now() + Math.random(); // ID nội bộ duy nhất, không dùng cho name/uuid nữa
+            const newShape = {
+                _internalId: newShapeInternalId,
+                // name và uuid sẽ được tạo động, không cần lưu trữ cố định trong shape object nữa
+                faces: {},
+                lines: [],
+                v: {},
+                pivot: [0, 0, 0],
+                deformTypes: ['Stretch2'],
+                stdMaterial: ''
+            };
+            shapesData.push(newShape);
+            // Không cần gán selectedShapeId ngay, vì selectShape sẽ làm điều đó thông qua renderShapesList
+            renderShapesList(); // Cập nhật danh sách trước
+            selectShape(newShapeInternalId); // Tự động chọn shape mới
+        };
+
+        function selectShape(shapeIdToSelect) {
+            selectedShapeId = shapeIdToSelect;
+            renderShapesList();
+            renderSelectedShapeEditor();
+            renderJsonOutput(); // Điều này sẽ gọi update3DView và áp dụng highlight
+        }
+
+        function deleteShape(shapeIdToDelete) {
+            shapesData = shapesData.filter(s => s._internalId !== shapeIdToDelete);
+            if (selectedShapeId === shapeIdToDelete) {
+                selectedShapeId = null;
+                if (currentDeformTypesText) currentDeformTypesText.textContent = 'None';
+                // Xóa luôn text tên/uuid đang hiển thị trong editor
+                generatedShapeNameLine.textContent = '';
+                generatedShapeNameStd.textContent = '';
+                // generatedShapeUuid.textContent = ''; // ĐÃ XÓA
+            }
+            renderShapesList();
+            renderSelectedShapeEditor(); // Cập nhật editor (có thể ẩn đi)
+            renderJsonOutput();
+        }
+
+        function generateShapeIdentifiers(shapeIndex, mode) {
+            const baseName = currentObjectName || "DEFAULT_OBJECT";
+            const suffix = mode === "Line" ? "L" : "G";
+            const name = `${baseName}-${suffix}_${shapeIndex + 1}`;
+            return { name: name, uuid: name }; // UUID giống hệt name
+        }
+
+        objectNameInput.onchange = (e) => {
+            currentObjectName = e.target.value.trim();
+            renderShapesList();
+            renderSelectedShapeEditor(); // Cập nhật tên hiển thị nếu có shape đang chọn
+            renderJsonOutput(); // Cập nhật JSON và 3D view
+        };
+
+        addVertexBtn.onclick = () => {
+            if (!selectedShapeId) return;
+            const shape = shapesData.find(s => s._internalId === selectedShapeId);
+            if (!shape) return;
+
+            const existingKeys = Object.keys(shape.v).map(k => parseInt(k)).filter(k => !isNaN(k));
+            const newKey = existingKeys.length > 0 ? Math.max(...existingKeys) + 1 : 0;
+
+            shape.v[newKey.toString()] = [0, 0, 0]; // Default coords
+            renderVerticesList(shape);
+            renderJsonOutput();
+        };
+
+        function handleVertexCoordsChange(event) {
+            if (!selectedShapeId) return;
+            const shape = shapesData.find(s => s._internalId === selectedShapeId);
+            if (!shape) return;
+
+            const vertexKey = event.target.dataset.vertexKey;
+            const newCoordsStr = event.target.value.trim();
+            const coordsArray = newCoordsStr.split(',').map(c => parseFloat(c.trim()));
+
+            if (coordsArray.length === 3 && coordsArray.every(c => !isNaN(c))) {
+                shape.v[vertexKey] = coordsArray;
+                renderJsonOutput();
+            } else {
+                alert("Định dạng tọa độ không hợp lệ. Vui lòng nhập dưới dạng X,Y,Z (ví dụ: 10.5,20,30.2)");
+                event.target.value = shape.v[vertexKey].join(',');
+            }
+        }
+
+        function copyVertex(vertexKeyToCopy) {
+            if (!selectedShapeId) return;
+            const shape = shapesData.find(s => s._internalId === selectedShapeId);
+            if (!shape || !shape.v[vertexKeyToCopy]) return;
+
+            const coordsToCopy = [...shape.v[vertexKeyToCopy]];
+
+            const existingKeys = Object.keys(shape.v).map(k => parseInt(k)).filter(k => !isNaN(k));
+            const newKey = existingKeys.length > 0 ? Math.max(...existingKeys) + 1 : 0;
+
+            shape.v[newKey.toString()] = coordsToCopy;
+            renderVerticesList(shape);
+            renderJsonOutput();
+        }
+
+        function deleteVertex(vertexKeyToDelete) {
+            if (!selectedShapeId) return;
+            const shape = shapesData.find(s => s._internalId === selectedShapeId);
+            if (!shape || !shape.v[vertexKeyToDelete]) return;
+
+            if (confirm(`Bạn có chắc muốn xóa Vertex ID(${vertexKeyToDelete})? Điều này có thể ảnh hưởng đến Faces và Lines.`)) {
+                delete shape.v[vertexKeyToDelete];
+                // TODO: Consider auto-deleting/updating faces/lines referencing this vertex
+                renderVerticesList(shape);
+                renderJsonOutput();
+                alert("Lưu ý: Faces và Lines tham chiếu đến vertex này có thể không còn hợp lệ.");
+            }
+        }
+
+        addFaceBtn.onclick = () => {
+            if (!selectedShapeId) return;
+            const shape = shapesData.find(s => s._internalId === selectedShapeId);
+            if (!shape) return;
+
+            const verticesStr = faceVerticesInput.value.trim();
+            const existingFaceKeys = Object.keys(shape.faces).map(k => parseInt(k)).filter(k => !isNaN(k));
+            let newFaceKey = 0;
+            if (existingFaceKeys.length > 0) {
+                newFaceKey = Math.max(...existingFaceKeys) + 1;
+            }
+            const faceKey = newFaceKey.toString();
+
+            if (!verticesStr) {
+                alert("Danh sách vertices cho face không được để trống.");
+                return;
+            }
+            const verticesIndices = verticesStr.split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v));
+            if (verticesIndices.length < 3) {
+                alert("Một face cần ít nhất 3 vertices.");
+                return;
+            }
+            for (let vIndex of verticesIndices) {
+                if (!shape.v[vIndex.toString()]) {
+                    alert(`Vertex ID '${vIndex}' không tồn tại trong danh sách vertices hiện tại của shape.`);
+                    return;
+                }
+            }
+            shape.faces[faceKey] = { vertices: verticesIndices };
+            renderFacesList(shape);
+            if (verticesIndices.length >= 2) {
+                for (let i = 0; i < verticesIndices.length; i++) {
+                    const vA = verticesIndices[i];
+                    const vB = verticesIndices[(i + 1) % verticesIndices.length];
+                    if (vA === vB || !shape.v[vA.toString()] || !shape.v[vB.toString()]) continue;
+                    const lineExists = shape.lines.some(existingLine =>
+                        (existingLine.v1 === vA && existingLine.v2 === vB) ||
+                        (existingLine.v1 === vB && existingLine.v2 === vA)
+                    );
+                    if (!lineExists) {
+                        shape.lines.push({ v1: vA, v2: vB });
+                    }
+                }
+                renderLinesList(shape);
+            }
+            renderJsonOutput();
+            faceVerticesInput.value = '';
+        };
+
+        function deleteFace(faceKeyToDelete) {
+            if (!selectedShapeId) return;
+            const shape = shapesData.find(s => s._internalId === selectedShapeId);
+            if (!shape || !shape.faces[faceKeyToDelete]) return;
+            delete shape.faces[faceKeyToDelete];
+            renderFacesList(shape);
+            renderJsonOutput();
+        }
+
+        addLineBtn.onclick = () => {
+            if (!selectedShapeId) return;
+            const shape = shapesData.find(s => s._internalId === selectedShapeId);
+            if (!shape) return;
+            const verticesStr = lineVerticesInput.value.trim();
+            if (!verticesStr) {
+                alert("Vui lòng nhập ID của hai đỉnh, cách nhau bởi dấu phẩy.");
+                return;
+            }
+            const parts = verticesStr.split(',');
+            if (parts.length !== 2) {
+                alert("Định dạng không hợp lệ. Vui lòng nhập hai ID đỉnh, cách nhau bởi dấu phẩy (ví dụ: 0,1).");
+                return;
+            }
+            const v1 = parseInt(parts[0].trim());
+            const v2 = parseInt(parts[1].trim());
+            if (isNaN(v1) || isNaN(v2)) {
+                alert("ID Vertex phải là số.");
+                return;
+            }
+            if (!shape.v[v1.toString()]) {
+                alert(`Vertex ID '${v1}' không tồn tại trong shape này.`);
+                return;
+            }
+            if (!shape.v[v2.toString()]) {
+                alert(`Vertex ID '${v2}' không tồn tại trong shape này.`);
+                return;
+            }
+            if (v1 === v2) {
+                alert("Một line không thể bắt đầu và kết thúc ở cùng một vertex.");
+                return;
+            }
+            const lineExists = shape.lines.some(existingLine =>
+                (existingLine.v1 === v1 && existingLine.v2 === v2) || (existingLine.v1 === v2 && existingLine.v2 === v1)
+            );
+            if (lineExists) {
+                alert("Line này đã tồn tại.");
+                return;
+            }
+            shape.lines.push({ v1: v1, v2: v2 });
+            renderLinesList(shape);
+            renderJsonOutput();
+            lineVerticesInput.value = '';
+        };
+
+        function deleteLine(lineIndexToDelete) {
+            if (!selectedShapeId) return;
+            const shape = shapesData.find(s => s._internalId === selectedShapeId);
+            if (!shape || !shape.lines[lineIndexToDelete]) return;
+            shape.lines.splice(lineIndexToDelete, 1);
+            renderLinesList(shape);
+            renderJsonOutput();
+        }
+
+        // --- Transformation Functions ---
+        function calculateShapeCentroid(shape) {
+            if (!shape || !shape.v || Object.keys(shape.v).length === 0) {
+                return new THREE.Vector3(0, 0, 0); // Default to origin if no vertices
+            }
+            const centroid = new THREE.Vector3(0, 0, 0);
+            const vertexKeys = Object.keys(shape.v);
+            vertexKeys.forEach(key => {
+                centroid.add(new THREE.Vector3(...shape.v[key]));
+            });
+            centroid.divideScalar(vertexKeys.length);
+            return centroid;
+        }
+
+        applyTranslateBtn.onclick = () => {
+            if (!selectedShapeId) return;
+            const shape = shapesData.find(s => s._internalId === selectedShapeId);
+            if (!shape || !shape.v) return;
+
+            // Đảm bảo shape.pivot tồn tại và là một mảng
+            shape.pivot = shape.pivot && Array.isArray(shape.pivot) && shape.pivot.length === 3 ? shape.pivot : [0, 0, 0];
+
+            const deltaX = parseFloat(translateXInput.value) || 0;
+            const deltaY = parseFloat(translateYInput.value) || 0;
+            const deltaZ = parseFloat(translateZInput.value) || 0;
+
+            shape.pivot[0] = parseFloat((shape.pivot[0] + deltaX).toFixed(1));
+            shape.pivot[1] = parseFloat((shape.pivot[1] + deltaY).toFixed(1));
+            shape.pivot[2] = parseFloat((shape.pivot[2] + deltaZ).toFixed(1));
+
+            // Không cần cập nhật shape.v nữa vì chúng là local
+            // renderVerticesList(shape); // Không cần thiết nếu chỉ pivot thay đổi
+            renderSelectedShapeEditor(); // Cập nhật giá trị pivot trên UI
+            renderJsonOutput(); // Cập nhật JSON và 3D view
+        };
+
+        applyRotateBtn.onclick = () => {
+            if (!selectedShapeId) return;
+            const shape = shapesData.find(s => s._internalId === selectedShapeId);
+            if (!shape || !shape.v) return;
+
+            const angleX = THREE.MathUtils.degToRad(parseFloat(rotateXInput.value) || 0);
+            const angleY = THREE.MathUtils.degToRad(parseFloat(rotateYInput.value) || 0);
+            const angleZ = THREE.MathUtils.degToRad(parseFloat(rotateZInput.value) || 0);
+
+            // const centroid = calculateShapeCentroid(shape); // Không cần centroid nữa vì xoay local vertices
+            const euler = new THREE.Euler(angleX, angleY, angleZ, 'XYZ'); // Thứ tự xoay XYZ
+
+            Object.keys(shape.v).forEach(key => {
+                const vertex = new THREE.Vector3(...shape.v[key]); // Đây là local vertex
+                // vertex.sub(centroid); // Không cần trừ centroid
+                vertex.applyEuler(euler); // Xoay quanh gốc (0,0,0) của local space
+                // vertex.add(centroid); // Không cần cộng lại centroid
+                shape.v[key] = [
+                    parseFloat(vertex.x.toFixed(1)),
+                    parseFloat(vertex.y.toFixed(1)),
+                    parseFloat(vertex.z.toFixed(1))
+                ];
+            });
+            renderVerticesList(shape);
+            renderJsonOutput();
+        };
+
+        function applyFlip(axis) {
+            if (!selectedShapeId) return;
+            const shape = shapesData.find(s => s._internalId === selectedShapeId);
+            if (!shape || !shape.v) return;
+
+            // const centroid = calculateShapeCentroid(shape); // Không cần centroid nữa
+
+            Object.keys(shape.v).forEach(key => {
+                const vertex = new THREE.Vector3(...shape.v[key]); // Local vertex
+                // vertex.sub(centroid); // Không cần
+                if (axis === 'x') vertex.x *= -1;
+                if (axis === 'y') vertex.y *= -1;
+                if (axis === 'z') vertex.z *= -1;
+                // vertex.add(centroid); // Không cần
+                shape.v[key] = [
+                    parseFloat(vertex.x.toFixed(1)),
+                    parseFloat(vertex.y.toFixed(1)),
+                    parseFloat(vertex.z.toFixed(1))
+                ];
+            });
+            renderVerticesList(shape);
+            renderJsonOutput();
+        }
+
+        flipXBtn.onclick = () => applyFlip('x');
+        flipYBtn.onclick = () => applyFlip('y');
+        flipZBtn.onclick = () => applyFlip('z');
+
+        pivotXInput.onchange = handlePivotChange;
+        pivotYInput.onchange = handlePivotChange;
+        pivotZInput.onchange = handlePivotChange;
+
+        function handlePivotChange() {
+            if (!selectedShapeId) return;
+            const shape = shapesData.find(s => s._internalId === selectedShapeId);
+            if (!shape) return;
+
+            const newPivotX = parseFloat(pivotXInput.value) || 0;
+            const newPivotY = parseFloat(pivotYInput.value) || 0;
+            const newPivotZ = parseFloat(pivotZInput.value) || 0;
+
+            shape.pivot = [newPivotX, newPivotY, newPivotZ];
+            renderJsonOutput(); // Cập nhật 3D view và JSON
+        }
+
+        deformStretch2Checkbox.onchange = handleDeformTypeChange;
+        deformClippingCheckbox.onchange = handleDeformTypeChange;
+
+        function handleDeformTypeChange(event) {
+            if (!selectedShapeId) return;
+            const shape = shapesData.find(s => s._internalId === selectedShapeId);
+            if (!shape) return;
+
+            const type = event.target.id === 'deformStretch2Checkbox' ? 'Stretch2' : 'Clipping';
+            shape.deformTypes = shape.deformTypes || [];
+
+            if (event.target.checked) {
+                // Thêm nếu chưa có, giữ thứ tự nếu đã có từ trước (do uncheck rồi check lại)
+                if (!shape.deformTypes.includes(type)) {
+                    shape.deformTypes.push(type);
+                }
+            } else {
+                // Xóa khỏi mảng
+                shape.deformTypes = shape.deformTypes.filter(dt => dt !== type);
+            }
+            updateCurrentDeformTypesText(shape.deformTypes); // Cập nhật text hiển thị
+            // Không cần gọi renderJsonOutput() ở đây vì JSON cho LineMesh được tạo riêng khi bấm nút
+        }
+
+        function updateCurrentDeformTypesText(deformTypesArray) {
+            if (currentDeformTypesText) {
+                currentDeformTypesText.textContent = deformTypesArray.join(', ') || 'None';
+            }
+        }
+
+        function generateLineMeshJsonString() {
+            const children = shapesData.map((shape, index) => {
+                const identifiers = generateShapeIdentifiers(index, "Line");
+                // Đảm bảo shape.name không rỗng, nếu rỗng dùng một giá trị tạm
+                // const geometryName = (shape.name && shape.name.trim() !== '') ? shape.name.trim() : `Shape_${shape._internalId}`; // Cũ
+                return {
+                    "@type": ".Mesh2",
+                    geometry: identifiers.name, // Sử dụng tên được tạo động
+                    deformTypes: shape.deformTypes && Array.isArray(shape.deformTypes) ? shape.deformTypes : ['Stretch2'],
+                    material: "MF", // Giữ nguyên như logic cũ của LineMesh
+                    edgeMaterial: "ML0" // Giữ nguyên
+                };
+            });
+            return JSON.stringify({ children: children }, null, 2);
+        }
+
+        copyLineMeshBtn.onclick = () => {
+            const lineMeshJson = generateLineMeshJsonString();
+            navigator.clipboard.writeText(lineMeshJson).then(() => {
+                alert('Đã sao chép Line Mesh JSON vào clipboard!');
+            }).catch(err => {
+                console.error('Lỗi khi sao chép Line Mesh JSON: ', err);
+                alert('Không thể tự động sao chép Line Mesh JSON. Vui lòng thử lại.');
+            });
+        };
+
+        function generateStdMeshJsonString() {
+            const children = shapesData.map((shape, index) => {
+                const identifiers = generateShapeIdentifiers(index, "Std");
+                // const geometryName = (shape.name && shape.name.trim() !== '') ? shape.name.trim() : `Shape_${shape._internalId}`; // Cũ
+                return {
+                    "@type": ".Mesh2",
+                    geometry: identifiers.name, // Sử dụng tên được tạo động
+                    deformTypes: shape.deformTypes && Array.isArray(shape.deformTypes) ? shape.deformTypes : ['Stretch2'],
+                    material: shape.stdMaterial || "",
+                    matTag: "mat1"
+                };
+            });
+            return JSON.stringify({ children: children }, null, 2);
+        }
+
+        copyStdMeshBtn.onclick = () => {
+            const stdMeshJson = generateStdMeshJsonString();
+            navigator.clipboard.writeText(stdMeshJson).then(() => {
+                alert('Đã sao chép Std Mesh JSON vào clipboard!');
+            }).catch(err => {
+                console.error('Lỗi khi sao chép Std Mesh JSON: ', err);
+                alert('Không thể tự động sao chép Std Mesh JSON. Vui lòng thử lại.');
+            });
+        };
+
+        stdMaterialInput.onchange = (e) => {
+            if (selectedShapeId) {
+                const shape = shapesData.find(s => s._internalId === selectedShapeId);
+                if (shape) {
+                    shape.stdMaterial = e.target.value;
+                    // Không cần renderJsonOutput() vì stdMaterial không ảnh hưởng trực tiếp đến 3D view hoặc JSON của các nút copy khác
+                }
+            }
+        };
+
+        importJsonBtn.onclick = async () => {
+            try {
+                const textFromClipboard = await navigator.clipboard.readText();
+                if (!textFromClipboard) {
+                    alert("Clipboard rỗng hoặc không chứa dữ liệu text.");
+                    return;
+                }
+
+                const parsedData = JSON.parse(textFromClipboard);
+
+                if (!parsedData || !Array.isArray(parsedData.shapes)) {
+                    alert("Lỗi: Dữ liệu từ clipboard không phải JSON hợp lệ hoặc không có thuộc tính 'shapes' dạng mảng.");
+                    return;
+                }
+
+                const isValidShapeStructure = parsedData.shapes.every(shape =>
+                    typeof shape.v === 'object' && shape.v !== null &&
+                    typeof shape.faces === 'object' && shape.faces !== null &&
+                    Array.isArray(shape.lines)
+                );
+
+                if (!isValidShapeStructure) {
+                    alert("Lỗi: Một hoặc nhiều shape trong JSON từ clipboard không có cấu trúc v, faces, hoặc lines hợp lệ.");
+                    return;
+                }
+
+                if (!currentObjectName || currentObjectName.trim() === "") {
+                    alert("Vui lòng nhập Object Name trước khi import JSON.");
+                    objectNameInput.focus();
+                    return;
+                }
+
+                shapesData = parsedData.shapes.map((s, index) => {
+                    const internalId = Date.now() + index + Math.random();
+                    return {
+                        _internalId: internalId,
+                        v: s.v || {},
+                        faces: s.faces || {},
+                        lines: s.lines || [],
+                        pivot: s.pivot && Array.isArray(s.pivot) && s.pivot.length === 3 ? s.pivot : [0, 0, 0],
+                        deformTypes: s.deformTypes && Array.isArray(s.deformTypes) ? s.deformTypes : ['Stretch2'],
+                        stdMaterial: s.stdMaterial || ''
+                    };
+                });
+
+                selectedShapeId = null;
+                renderShapesList();
+                renderSelectedShapeEditor();
+                renderJsonOutput();
+
+                if (shapesData.length > 0 && !selectedShapeId) {
+                    // Option: select the first shape automatically after import
+                    // selectShape(shapesData[0]._internalId);
+                } else if (selectedShapeId) {
+                    const currentSelectedShape = shapesData.find(s => s._internalId === selectedShapeId);
+                    if (currentSelectedShape) {
+                        updateCurrentDeformTypesText(currentSelectedShape.deformTypes);
+                    }
+                } else {
+                    if (currentDeformTypesText) currentDeformTypesText.textContent = 'None';
+                }
+
+            } catch (error) {
+                console.error("Lỗi khi import JSON từ clipboard:", error);
+                if (error.name === 'NotAllowedError') {
+                    alert("Lỗi: Không được phép truy cập clipboard. Vui lòng cấp quyền cho trang web.");
+                } else if (error instanceof SyntaxError) {
+                    alert("Lỗi: Dữ liệu trong clipboard không phải là định dạng JSON hợp lệ.");
+                } else {
+                    alert("Đã xảy ra lỗi khi đọc hoặc parse JSON từ clipboard. Vui lòng kiểm tra console.");
+                }
+            }
+        };
+
+        function copyShape(shapeIdToCopy) {
+            // ... existing code ...
+        }
+
+        // --- Initialization ---
+        function init() {
+            // Có thể load dữ liệu mẫu hoặc từ localStorage ở đây
+
+            renderShapesList();
+            renderSelectedShapeEditor(); // Ban đầu sẽ ẩn editor
+            renderJsonOutput(); // This will also call update3DView
+            init3DViewer();
+        }
+
+        init();
+    </script>
+</body>
+
+</html>
