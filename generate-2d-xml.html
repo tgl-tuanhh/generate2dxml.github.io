@@ -527,6 +527,67 @@
     }
 
     // --- Tool Specific Logic ---
+    function calculateConvexHull(points) {
+      if (points.length <= 2) {
+        return [...points]; // Or handle as an edge case, e.g., return empty if < 3 for polygon
+      }
+
+      // Sort points lexicographically (by x, then by y)
+      points.sort((a, b) => {
+        if (a.x !== b.x) {
+          return a.x - b.x;
+        }
+        return a.y - b.y;
+      });
+
+      // Remove duplicate points after sorting
+      const uniquePoints = [];
+      if (points.length > 0) {
+        uniquePoints.push(points[0]);
+        for (let i = 1; i < points.length; i++) {
+          if (points[i].x !== points[i - 1].x || points[i].y !== points[i - 1].y) {
+            uniquePoints.push(points[i]);
+          }
+        }
+      }
+
+      if (uniquePoints.length <= 2) return [...uniquePoints];
+
+      const upper = [];
+      const lower = [];
+
+      // Cross product to determine turn direction
+      // (p1, p2, p3) -> (p2.x - p1.x)*(p3.y - p1.y) - (p2.y - p1.y)*(p3.x - p1.x)
+      // > 0 for counter-clockwise turn (left turn)
+      // < 0 for clockwise turn (right turn)
+      // = 0 for collinear points
+      const crossProduct = (p1, p2, p3) => {
+        return (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
+      };
+
+      // Build upper hull
+      for (const p of uniquePoints) {
+        while (upper.length >= 2 && crossProduct(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+          upper.pop();
+        }
+        upper.push(p);
+      }
+
+      // Build lower hull
+      for (let i = uniquePoints.length - 1; i >= 0; i--) {
+        const p = uniquePoints[i];
+        while (lower.length >= 2 && crossProduct(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+          lower.pop();
+        }
+        lower.push(p);
+      }
+
+      // Concatenate hulls, removing duplicates (first and last points of upper/lower are same as last/first of other)
+      lower.pop();
+      upper.pop();
+      return upper.concat(lower);
+    }
+
     function clearCurrentHighlight() {
       if (currentlyHighlightedSvgElementId) {
         const previouslyHighlightedElement = svgViewerPanel.querySelector(`#${currentlyHighlightedSvgElementId}`);
@@ -558,8 +619,7 @@
       }
 
       let tplElements = "";
-      // Initialize processedFootprints globally for the entire JSON input
-      let processedFootprints = new Map(); // Key: canonical string of 2D points, Value: candidate object
+      let processedFootprints = new Map(); // Key: canonical string of 2D HULL points, Value: candidate object
 
       jsonData.shapes.forEach((shape, shapeIndex) => {
         if (!shape.v || !shape.faces) {
@@ -567,8 +627,7 @@
           return;
         }
 
-        // No longer need candidatePolygonsForShape here, process directly into global processedFootprints
-        // let candidatePolygonsForShape = []; 
+        let facesByAvgZ = new Map(); // Map<number (rounded avgZ), { uniqueProjectedPoints: Point[], originalFaceKey: string }[]>
 
         Object.keys(shape.faces).forEach(faceKey => {
           const faceData = shape.faces[faceKey];
@@ -601,28 +660,66 @@
             return;
           }
 
-          const uniqueProjectedPoints = [];
+          const uniqueProjectedPointsForFace = [];
+          const pointSetForFace = new Set();
           currentProjected2DPoints.forEach(p => {
-            if (!uniqueProjectedPoints.find(up => up.x === p.x && up.y === p.y)) {
-              uniqueProjectedPoints.push(p);
+            const key = `${p.x.toFixed(3)},${p.y.toFixed(3)}`; // Use toFixed for consistent keying
+            if (!pointSetForFace.has(key)) {
+              pointSetForFace.add(key);
+              uniqueProjectedPointsForFace.push({ x: parseFloat(p.x.toFixed(3)), y: parseFloat(p.y.toFixed(3)) });
             }
           });
 
-          if (uniqueProjectedPoints.length < 3) {
+          if (uniqueProjectedPointsForFace.length < 3) {
             return;
           }
 
           const currentFaceAvgZ = (numZ > 0) ? (sumZ / numZ) : -Infinity;
+          const roundedAvgZ = parseFloat(currentFaceAvgZ.toFixed(3)); // Group by rounded Z
+
+          if (!facesByAvgZ.has(roundedAvgZ)) {
+            facesByAvgZ.set(roundedAvgZ, []);
+          }
+          facesByAvgZ.get(roundedAvgZ).push({
+            uniqueProjectedPoints: uniqueProjectedPointsForFace, // Points of THIS face
+            originalFaceKey: faceKey // Keep for debugging or potential future use
+          });
+        });
+
+        // Process each Z-level group for the current shape
+        facesByAvgZ.forEach((faceListAtZ, avgZ_num) => {
+          let all2DPointsAtThisZ = [];
+          faceListAtZ.forEach(faceInfo => {
+            all2DPointsAtThisZ.push(...faceInfo.uniqueProjectedPoints);
+          });
+
+          const uniqueOverall2DPointsAtThisZ = [];
+          const pointSetOverall = new Set();
+          all2DPointsAtThisZ.forEach(p => {
+            const key = `${p.x.toFixed(3)},${p.y.toFixed(3)}`;
+            if (!pointSetOverall.has(key)) {
+              pointSetOverall.add(key);
+              uniqueOverall2DPointsAtThisZ.push(p); // p is already {x, y} with precision
+            }
+          });
+
+          if (uniqueOverall2DPointsAtThisZ.length < 3) return;
+
+          const hullPoints = calculateConvexHull(uniqueOverall2DPointsAtThisZ);
+          if (!hullPoints || hullPoints.length < 3) {
+            // console.warn(`Hull for shape '${shape.name}', Z=${avgZ_num} resulted in <3 points. Points:`, uniqueOverall2DPointsAtThisZ);
+            return;
+          }
+
           const candidateData = {
-            points2DForFootprint: uniqueProjectedPoints,
-            avgZ: currentFaceAvgZ,
-            originalFaceKey: faceKey, // Retain for debugging if needed
-            originalVerticesOrder: currentProjected2DPoints,
-            shapeName: shape.name || `shape_${shapeIndex}` // For potential future use or debugging
+            points2DForFootprint: hullPoints, // Hull points define the footprint
+            avgZ: avgZ_num,
+            originalVerticesOrder: hullPoints, // Hull points for drawing
+            shapeName: shape.name || `shape_${shapeIndex}`
           };
 
-          // Create a canonical representation of the 2D points for footprint comparison.
-          let canonicalKeyPoints = [...candidateData.points2DForFootprint].sort((a, b) => {
+          // Create a canonical key from sorted hull points
+          let canonicalKeyPoints = [...hullPoints].sort((a, b) => {
             if (a.x !== b.x) return a.x - b.x;
             return a.y - b.y;
           });
@@ -634,7 +731,7 @@
         });
       });
 
-      // Generate XML for the selected (top-most for each footprint ACROSS ALL SHAPES) polygons
+      // Generate XML for the selected (top-most for each hull footprint ACROSS ALL SHAPES) polygons
       let tplCounter = 0;
       processedFootprints.forEach((selectedPolygon, footprintKey) => {
         let polygonPointsAttrs = "";
