@@ -1489,6 +1489,34 @@
             // ... existing code ...
         }
 
+        copyLineGeometryBtn.onclick = () => {
+            const lineGeometryJsonString = generateJsonString(true); // true để bao gồm lines
+            if (!lineGeometryJsonString) {
+                alert('Không có dữ liệu Line Geometry JSON để sao chép.');
+                return;
+            }
+            navigator.clipboard.writeText(lineGeometryJsonString).then(() => {
+                alert('Đã sao chép Line Geometry JSON vào clipboard!');
+            }).catch(err => {
+                console.error('Lỗi khi sao chép Line Geometry JSON: ', err);
+                alert('Không thể tự động sao chép JSON. Vui lòng thử lại.');
+            });
+        };
+
+        copyStdGeometryBtn.onclick = () => {
+            const stdGeometryJsonString = generateJsonString(false); // false để không bao gồm lines
+            if (!stdGeometryJsonString) {
+                alert('Không thể tạo Standard Geometry JSON.');
+                return;
+            }
+            navigator.clipboard.writeText(stdGeometryJsonString).then(() => {
+                alert('Đã sao chép Standard Geometry JSON (không có lines) vào clipboard!');
+            }).catch(err => {
+                console.error('Lỗi khi sao chép Standard Geometry JSON: ', err);
+                alert('Không thể tự động sao chép JSON. Vui lòng thử lại.');
+            });
+        };
+
         // --- Initialization ---
         function init() {
             // Có thể load dữ liệu mẫu hoặc từ localStorage ở đây
