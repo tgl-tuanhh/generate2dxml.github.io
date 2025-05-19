@@ -860,7 +860,7 @@
             const output = {
                 shapes: shapesForJson
             };
-            return JSON.stringify(output, null, 2);
+            return JSON.stringify(output); // Bỏ null, 2 để minimize
         }
 
         function renderSelectedShapeEditor() {
@@ -1363,7 +1363,7 @@
                     edgeMaterial: "ML0" // Giữ nguyên
                 };
             });
-            return JSON.stringify({ children: children }, null, 2);
+            return JSON.stringify({ children: children }); // Bỏ null, 2 để minimize
         }
 
         copyLineMeshBtn.onclick = () => {
@@ -1388,7 +1388,7 @@
                     matTag: "mat1"
                 };
             });
-            return JSON.stringify({ children: children }, null, 2);
+            return JSON.stringify({ children: children }); // Bỏ null, 2 để minimize
         }
 
         copyStdMeshBtn.onclick = () => {
