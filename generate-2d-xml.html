@@ -146,6 +146,7 @@
     const loadJsonButton = document.getElementById('loadJsonFromClipboardButton');
     const copyXmlButton = document.getElementById('copyXmlButton');
     const userMessageDiv = document.getElementById('userMessage');
+    let currentlyHighlightedSvgElementId = null; // Variable to store the ID of the currently highlighted SVG element
 
     // --- SVG Viewer Code (Copied and adapted from geom2d-editor.html) ---
     class SvgConverter {
@@ -380,6 +381,13 @@
         const svgPolygon = document.createElementNS(this.svgNS, "polygon");
         svgPolygon.setAttribute("points", points.join(" "));
         this.applyCommonAttributes(svgPolygon, xmlElement);
+
+        // Get ID from XML element and set it on SVG element
+        const xmlId = xmlElement.getAttribute("id");
+        if (xmlId) {
+          svgPolygon.setAttribute("id", xmlId);
+        }
+
         return svgPolygon;
       }
     }
@@ -519,6 +527,30 @@
     }
 
     // --- Tool Specific Logic ---
+    function clearCurrentHighlight() {
+      if (currentlyHighlightedSvgElementId) {
+        const previouslyHighlightedElement = svgViewerPanel.querySelector(`#${currentlyHighlightedSvgElementId}`);
+        if (previouslyHighlightedElement) {
+          previouslyHighlightedElement.classList.remove('highlighted-svg-element');
+        }
+        currentlyHighlightedSvgElementId = null;
+      }
+    }
+
+    function highlightSvgElementById(elementId) {
+      clearCurrentHighlight(); // Clear previous highlight first
+
+      if (elementId) {
+        const svgElementToHighlight = svgViewerPanel.querySelector(`#${elementId}`);
+        if (svgElementToHighlight) {
+          svgElementToHighlight.classList.add('highlighted-svg-element');
+          currentlyHighlightedSvgElementId = elementId;
+        } else {
+          // console.warn(`SVG element with ID '${elementId}' not found for highlighting.`);
+        }
+      }
+    }
+
     function convert3dJsonTo2dTargetXml(jsonData) {
       if (!jsonData || !Array.isArray(jsonData.shapes)) {
         console.error("Invalid JSON data structure: 'shapes' array not found.", jsonData);
@@ -603,7 +635,8 @@
       });
 
       // Generate XML for the selected (top-most for each footprint ACROSS ALL SHAPES) polygons
-      processedFootprints.forEach(selectedPolygon => {
+      let tplCounter = 0;
+      processedFootprints.forEach((selectedPolygon, footprintKey) => {
         let polygonPointsAttrs = "";
         selectedPolygon.originalVerticesOrder.forEach((p, i) => {
           polygonPointsAttrs += `x${i + 1}="${p.x}" y${i + 1}="${p.y}" `;
@@ -618,14 +651,19 @@
         const lineTypeJoin = "MITER";
         const lineTypeMiterLimit = "1.0";
 
+        // Generate unique IDs
+        const tplId = `tpl-${tplCounter}`;
+        const polygonId = `poly-${tplId}-0`; // Assuming one polygon per TPL for now
+
         tplElements += `
-<TPL id="0" matFill="mat1" matLine="mat2" deformTypes="Stretch2,Clipping">
+<TPL id="${tplId}" matFill="mat1" matLine="mat2" deformTypes="Stretch2,Clipping">
  <geometry>
-  <POLYGON id="0" width="0.0" forec="${defaultForec}" fillc="${defaultFillc}" drawline="1" fill="1" smooth="0" pointsize="4" ${polygonPointsAttrs.trim()}>
+  <POLYGON id="${polygonId}" width="0.0" forec="${defaultForec}" fillc="${defaultFillc}" drawline="1" fill="1" smooth="0" pointsize="4" ${polygonPointsAttrs.trim()}>
    <LINETYPE name="${lineTypeName}" width="${lineTypeWidth}" widthtype="${lineTypeWidthType}" cap="${lineTypeCap}" join="${lineTypeJoin}" miterlimit="${lineTypeMiterLimit}"/>
   </POLYGON>
  </geometry>
 </TPL>`;
+        tplCounter++;
       });
 
       if (!tplElements) {
@@ -653,6 +691,8 @@
           const polygonNode = geometryNode.querySelector("POLYGON");
           if (polygonNode) {
             let pointsAttrs = "";
+            const polygonOriginalId = polygonNode.getAttribute("id") || `gen-poly-${tplNodes.length}-${viewerPolygons.length}`; // Fallback ID
+
             for (let i = 0; i < polygonNode.attributes.length; i++) {
               const attr = polygonNode.attributes[i];
               if (attr.name.match(/^x\d+$/) || attr.name.match(/^y\d+$/)) {
@@ -668,7 +708,7 @@
               defaultLinetypeWidthForViewer = lineTypeNode.getAttribute("width"); // Use specific if available
             }
 
-            viewerPolygons += `<POLYGON${pointsAttrs} forec="${forec}" fillc="${fillc}" />\n`;
+            viewerPolygons += `<POLYGON id="${polygonOriginalId}"${pointsAttrs} forec="${forec}" fillc="${fillc}" />\n`;
           }
           // Could extend to extract PATH elements here if needed in future
         }
@@ -725,6 +765,68 @@
           wordWrap: 'on',
           minimap: { enabled: false }
         });
+
+        // Listen for cursor changes to enable highlighting
+        xmlOutputEditor.onDidChangeCursorPosition(e => {
+          const model = xmlOutputEditor.getModel();
+          if (!model) return;
+
+          const position = e.position;
+          const currentLineNumber = position.lineNumber;
+          const currentLineContent = model.getLineContent(currentLineNumber);
+
+          let elementIdToHighlight = null;
+
+          // Try to find a POLYGON or TPL tag and its ID on the current line or preceding lines
+          // This is a simplified parser. For robust XML parsing, a proper parser would be better.
+          for (let lineNum = currentLineNumber; lineNum >= 1; lineNum--) {
+            const lineContent = model.getLineContent(lineNum);
+            let match;
+
+            // Check for POLYGON ID
+            // Regex to find <POLYGON ... id="some-id" ... >
+            // It captures the ID from the id attribute if the cursor is on the line of the tag or after its opening.
+            const polygonRegex = /<POLYGON\s+[^>]*id\s*=\s*['"]([\w\-]+)['"][^>]*>/i;
+            if (lineNum === currentLineNumber) { // Only check current line for full tag match if cursor is on it
+              match = lineContent.substring(0, position.column - 1).match(polygonRegex) || lineContent.match(polygonRegex);
+            } else { // For previous lines, check the whole line
+              match = lineContent.match(polygonRegex);
+            }
+            if (match && match[1]) {
+              elementIdToHighlight = match[1];
+              break; // Found POLYGON ID
+            }
+
+            // Check for TPL ID (if no POLYGON ID found yet)
+            // Regex to find <TPL ... id="some-id" ... >
+            const tplRegex = /<TPL\s+[^>]*id\s*=\s*['"]([\w\-]+)['"][^>]*>/i;
+            if (lineNum === currentLineNumber) {
+              match = lineContent.substring(0, position.column - 1).match(tplRegex) || lineContent.match(tplRegex);
+            } else {
+              match = lineContent.match(tplRegex);
+            }
+            if (match && match[1]) {
+              // If we find a TPL, we want to highlight its first polygon child (if any)
+              // The ID convention is poly-${tplId}-0
+              elementIdToHighlight = `poly-${match[1]}-0`;
+              break; // Found TPL ID, derive polygon ID
+            }
+
+            if (lineContent.includes("</POLYGON>") || lineContent.includes("</TPL>") || lineContent.includes("<GROUP") || lineContent.includes("</GROUP>")) {
+              // Stop searching upwards if we hit a closing tag for these elements or a new group, 
+              // as the cursor is likely outside or in a different scope.
+              if (lineNum < currentLineNumber) break;
+            }
+            if (lineNum === currentLineNumber && position.lineNumber - lineNum > 5) break; // Limit lookbehind to a few lines
+          }
+
+          if (elementIdToHighlight) {
+            highlightSvgElementById(elementIdToHighlight);
+          } else {
+            clearCurrentHighlight();
+          }
+        });
+
       });
 
       loadJsonButton.addEventListener('click', async () => {
