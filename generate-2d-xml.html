@@ -750,7 +750,7 @@
 
         // Generate unique IDs
         const tplId = `tpl-${tplCounter}`;
-        const polygonId = `poly-${tplId}-0`; // Assuming one polygon per TPL for now
+        const polygonId = tplCounter.toString(); // Changed: ID polygon là số tăng dần
 
         tplElements += `
 <TPL id="${tplId}" matFill="mat1" matLine="mat2" deformTypes="Stretch2,Clipping">
@@ -903,10 +903,16 @@
               match = lineContent.match(tplRegex);
             }
             if (match && match[1]) {
-              // If we find a TPL, we want to highlight its first polygon child (if any)
-              // The ID convention is poly-${tplId}-0
-              elementIdToHighlight = `poly-${match[1]}-0`;
-              break; // Found TPL ID, derive polygon ID
+              // If we find a TPL, we want to highlight its corresponding polygon.
+              // TPL ID is "tpl-N", polygon ID is "N".
+              const tplIdValue = match[1]; // e.g., "tpl-0"
+              if (tplIdValue.startsWith("tpl-")) {
+                elementIdToHighlight = tplIdValue.substring(4); // Extracts "N" from "tpl-N"
+              } else {
+                // Fallback if TPL ID format is unexpected, clear highlight
+                elementIdToHighlight = null;
+              }
+              break; // Found TPL ID, derived polygon ID
             }
 
             if (lineContent.includes("</POLYGON>") || lineContent.includes("</TPL>") || lineContent.includes("<GROUP") || lineContent.includes("</GROUP>")) {
