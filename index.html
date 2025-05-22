@@ -235,6 +235,15 @@
                 style="margin-right: 10px; padding: 6px; border-radius: 3px; border: 1px solid #ccc;">
             <button id="importJsonBtn">Đọc Clipboard</button>
         </div>
+        <div class="header-controls-group default-settings-controls">
+            <input type="text" id="defaultStdMaterialInput" placeholder="Default Std Material"
+                style="margin-right: 5px; padding: 6px; border-radius: 3px; border: 1px solid #ccc; width: 150px;">
+            <label style="margin-right: 5px; color: white;"><input type="checkbox" id="defaultDeformStretch2Checkbox"
+                    checked> Stretch2</label>
+            <label style="margin-right: 10px; color: white;"><input type="checkbox" id="defaultDeformClippingCheckbox">
+                Clipping</label>
+            <button id="applyDefaultsBtn" style="background-color: #28a745;">Áp dụng cho tất cả</button>
+        </div>
         <div class="header-controls-group output-controls">
             <button id="copyLineGeometryBtn">Copy Line Geometry</button>
             <button id="copyStdGeometryBtn">Copy Std Geometry</button>
@@ -444,6 +453,11 @@
         const pivotXInput = document.getElementById('pivotX');
         const pivotYInput = document.getElementById('pivotY');
         const pivotZInput = document.getElementById('pivotZ');
+
+        const defaultStdMaterialInput = document.getElementById('defaultStdMaterialInput');
+        const defaultDeformStretch2Checkbox = document.getElementById('defaultDeformStretch2Checkbox');
+        const defaultDeformClippingCheckbox = document.getElementById('defaultDeformClippingCheckbox');
+        const applyDefaultsBtn = document.getElementById('applyDefaultsBtn');
 
         // --- Helper function to create text sprites (moved to a more global scope) ---
         function createTextSprite(message, parameters) {
@@ -979,6 +993,11 @@
         // --- Event Handlers & Logic ---
         addShapeBtn.onclick = () => {
             const newShapeInternalId = Date.now() + Math.random(); // ID nội bộ duy nhất, không dùng cho name/uuid nữa
+            const defaultStdMaterial = defaultStdMaterialInput.value.trim();
+            const defaultDeformTypes = [];
+            if (defaultDeformStretch2Checkbox.checked) defaultDeformTypes.push('Stretch2');
+            if (defaultDeformClippingCheckbox.checked) defaultDeformTypes.push('Clipping');
+
             const newShape = {
                 _internalId: newShapeInternalId,
                 // name và uuid sẽ được tạo động, không cần lưu trữ cố định trong shape object nữa
@@ -986,8 +1005,8 @@
                 lines: [],
                 v: {},
                 pivot: [0, 0, 0],
-                deformTypes: ['Stretch2'],
-                stdMaterial: ''
+                deformTypes: defaultDeformTypes, // Sử dụng giá trị default
+                stdMaterial: defaultStdMaterial  // Sử dụng giá trị default
             };
             shapesData.push(newShape);
             // Không cần gán selectedShapeId ngay, vì selectShape sẽ làm điều đó thông qua renderShapesList
@@ -1442,8 +1461,8 @@
                         faces: s.faces || {},
                         lines: s.lines || [],
                         pivot: s.pivot && Array.isArray(s.pivot) && s.pivot.length === 3 ? s.pivot : [0, 0, 0],
-                        deformTypes: s.deformTypes && Array.isArray(s.deformTypes) ? s.deformTypes : ['Stretch2'],
-                        stdMaterial: s.stdMaterial || ''
+                        deformTypes: s.deformTypes && Array.isArray(s.deformTypes) ? s.deformTypes : (parsedData.shapes.length === 1 && s.deformTypes === undefined ? ['Stretch2'] : (s.deformTypes || (defaultDeformStretch2Checkbox.checked ? ['Stretch2'] : []).concat(defaultDeformClippingCheckbox.checked ? ['Clipping'] : []))),
+                        stdMaterial: s.stdMaterial || defaultStdMaterialInput.value.trim()
                     };
                 });
 
@@ -1477,8 +1496,62 @@
         };
 
         function copyShape(shapeIdToCopy) {
-            // ... existing code ...
+            // Tìm shape gốc để sao chép
+            const originalShape = shapesData.find(s => s._internalId === shapeIdToCopy);
+            if (!originalShape) return;
+
+            // Tạo một bản sao sâu của shape (trừ _internalId)
+            // Quan trọng: Cần sao chép sâu các object và array bên trong (v, faces, lines, pivot, deformTypes)
+            const newShapeInternalId = Date.now() + Math.random();
+            const newV = JSON.parse(JSON.stringify(originalShape.v || {}));
+            const newFaces = JSON.parse(JSON.stringify(originalShape.faces || {}));
+            const newLines = JSON.parse(JSON.stringify(originalShape.lines || []));
+            const newPivot = JSON.parse(JSON.stringify(originalShape.pivot || [0, 0, 0]));
+            const newDeformTypes = JSON.parse(JSON.stringify(originalShape.deformTypes || []));
+
+            const copiedShape = {
+                _internalId: newShapeInternalId,
+                v: newV,
+                faces: newFaces,
+                lines: newLines,
+                pivot: newPivot, // Sao chép pivot
+                deformTypes: newDeformTypes, // Sao chép deformTypes
+                stdMaterial: originalShape.stdMaterial // Sao chép stdMaterial
+            };
+
+            // Thêm shape đã sao chép vào mảng shapesData
+            shapesData.push(copiedShape);
+
+            // Cập nhật danh sách shapes và tự động chọn shape mới được sao chép
+            renderShapesList();
+            selectShape(newShapeInternalId); // Chọn shape mới được copy
         }
+
+        applyDefaultsBtn.onclick = () => {
+            const defaultStdMaterial = defaultStdMaterialInput.value.trim();
+            const defaultDeformTypes = [];
+            if (defaultDeformStretch2Checkbox.checked) defaultDeformTypes.push('Stretch2');
+            if (defaultDeformClippingCheckbox.checked) defaultDeformTypes.push('Clipping');
+
+            if (shapesData.length === 0) {
+                alert("Không có shape nào để áp dụng.");
+                return;
+            }
+
+            const confirmApply = confirm(`Bạn có chắc muốn áp dụng default Std Material '${defaultStdMaterial}' và Deform Types '${defaultDeformTypes.join(', ')}' cho tất cả ${shapesData.length} shapes không? Hành động này không thể hoàn tác.`);
+            if (!confirmApply) return;
+
+            shapesData.forEach(shape => {
+                shape.stdMaterial = defaultStdMaterial;
+                shape.deformTypes = [...defaultDeformTypes]; // Tạo bản sao để tránh tham chiếu
+            });
+
+            if (selectedShapeId) {
+                renderSelectedShapeEditor(); // Cập nhật editor nếu có shape đang được chọn
+            }
+            renderJsonOutput(); // Cập nhật 3D view
+            alert(`Đã áp dụng giá trị mặc định cho ${shapesData.length} shapes.`);
+        };
 
         copyLineGeometryBtn.onclick = () => {
             const lineGeometryJsonString = generateJsonString(true); // true để bao gồm lines
