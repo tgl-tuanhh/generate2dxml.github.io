@@ -38,7 +38,8 @@
         header .btn {
             /* Target Bootstrap buttons in header too */
             /* Style chung cho các button trong header */
-            padding: 6px 12px;
+            padding: 0.25rem 0.5rem;
+            /* Điều chỉnh padding để giảm chiều cao */
             /* background-color: #007bff; */
             /* Bootstrap handles this */
             font-size: 0.9em;
@@ -50,6 +51,12 @@
             cursor: pointer;
             margin-left: 5px;
             /* Khoảng cách giữa các button trong cùng một nhóm */
+        }
+
+        #importJsonBtn {
+            white-space: nowrap;
+            /* min-width: 120px; */
+            /* Có thể bỏ comment nếu cần chiều rộng tối thiểu */
         }
 
         /* header button:hover {
@@ -425,7 +432,7 @@
                                     <label>Default Deform Types:</label>
                                     <div class="form-check">
                                         <input class="form-check-input" type="checkbox"
-                                            id="defaultDeformStretch2Checkbox" checked>
+                                            id="defaultDeformStretch2Checkbox"> <!-- Bỏ checked mặc định -->
                                         <label class="form-check-label"
                                             for="defaultDeformStretch2Checkbox">Stretch2</label>
                                     </div>
@@ -1068,7 +1075,7 @@
         addShapeBtn.onclick = () => {
             const newShapeInternalId = Date.now() + Math.random(); // ID nội bộ duy nhất, không dùng cho name/uuid nữa
             const defaultStdMaterial = defaultStdMaterialInput.value.trim();
-            const defaultDeformTypes = [];
+            const defaultDeformTypes = []; // Khởi tạo mảng rỗng
             if (defaultDeformStretch2Checkbox.checked) defaultDeformTypes.push('Stretch2');
             if (defaultDeformClippingCheckbox.checked) defaultDeformTypes.push('Clipping');
 
@@ -1535,7 +1542,8 @@
                         faces: s.faces || {},
                         lines: s.lines || [],
                         pivot: s.pivot && Array.isArray(s.pivot) && s.pivot.length === 3 ? s.pivot : [0, 0, 0],
-                        deformTypes: s.deformTypes && Array.isArray(s.deformTypes) ? s.deformTypes : (parsedData.shapes.length === 1 && s.deformTypes === undefined ? ['Stretch2'] : (s.deformTypes || (defaultDeformStretch2Checkbox.checked ? ['Stretch2'] : []).concat(defaultDeformClippingCheckbox.checked ? ['Clipping'] : []))),
+                        // Nếu s.deformTypes không tồn tại, sẽ lấy từ các checkbox mặc định (giờ đây sẽ là rỗng nếu không check)
+                        deformTypes: s.deformTypes && Array.isArray(s.deformTypes) ? s.deformTypes : (defaultDeformStretch2Checkbox.checked ? ['Stretch2'] : []).concat(defaultDeformClippingCheckbox.checked ? ['Clipping'] : []),
                         stdMaterial: s.stdMaterial || defaultStdMaterialInput.value.trim()
                     };
                 });
