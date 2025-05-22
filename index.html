@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kitect 3D JSON Studio</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -33,22 +34,28 @@
             /* Căn giữa theo chiều dọc */
         }
 
-        header button {
+        header button,
+        header .btn {
+            /* Target Bootstrap buttons in header too */
             /* Style chung cho các button trong header */
             padding: 6px 12px;
-            background-color: #007bff;
+            /* background-color: #007bff; */
+            /* Bootstrap handles this */
             font-size: 0.9em;
-            color: white;
-            border: none;
+            /* color: white; */
+            /* Bootstrap handles this */
+            /* border: none; */
+            /* Bootstrap handles this */
             border-radius: 3px;
             cursor: pointer;
             margin-left: 5px;
             /* Khoảng cách giữa các button trong cùng một nhóm */
         }
 
-        header button:hover {
+        /* header button:hover {
             background-color: #0056b3;
-        }
+        } */
+        /* Bootstrap handles this */
 
         .header-controls-group {
             display: flex;
@@ -59,6 +66,7 @@
         /* Có thể thêm style cụ thể cho input-controls và output-controls nếu cần */
         #create2DXmlBtn {
             background-color: red;
+            /* Keep this specific style if needed */
         }
 
         .main-container {
@@ -224,6 +232,15 @@
         .hidden {
             display: none;
         }
+
+        /* Toast Styling */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1050;
+            /* Ensure toast is above other elements, including modals (Bootstrap modal z-index is 1040/1050) */
+        }
     </style>
 </head>
 
@@ -231,25 +248,15 @@
     <header>
         <h1>Kitect 3D JSON Studio</h1>
         <div class="header-controls-group input-controls">
-            <input type="text" id="objectNameInput" placeholder="Nhập Object Name (ví dụ: PFHP-PILLAR-B)"
-                style="margin-right: 10px; padding: 6px; border-radius: 3px; border: 1px solid #ccc;">
-            <button id="importJsonBtn">Đọc Clipboard</button>
+            <input type="text" id="objectNameInput" class="form-control form-control-sm mr-2"
+                placeholder="Nhập Object Name (ví dụ: PFHP-PILLAR-B)" value="OBJECT-NAME">
+            <button id="importJsonBtn" class="btn btn-primary btn-sm">Đọc Clipboard</button>
         </div>
-        <div class="header-controls-group default-settings-controls">
-            <input type="text" id="defaultStdMaterialInput" placeholder="Default Std Material"
-                style="margin-right: 5px; padding: 6px; border-radius: 3px; border: 1px solid #ccc; width: 150px;">
-            <label style="margin-right: 5px; color: white;"><input type="checkbox" id="defaultDeformStretch2Checkbox"
-                    checked> Stretch2</label>
-            <label style="margin-right: 10px; color: white;"><input type="checkbox" id="defaultDeformClippingCheckbox">
-                Clipping</label>
-            <button id="applyDefaultsBtn" style="background-color: #28a745;">Áp dụng cho tất cả</button>
-        </div>
-        <div class="header-controls-group output-controls">
-            <button id="copyLineGeometryBtn">Copy Line Geometry</button>
-            <button id="copyStdGeometryBtn">Copy Std Geometry</button>
-            <button id="copyLineMeshBtn">Copy Line Mesh</button>
-            <button id="copyStdMeshBtn">Copy Std Mesh</button>
-            <button id="create2DXmlBtn" onclick="window.open('./generate-2d-xml.html', '_blank')">Create 2D XML</button>
+        <div class="header-controls-group main-actions">
+            <button id="openOptionsModalBtn" class="btn btn-info btn-sm mr-2" data-toggle="modal"
+                data-target="#optionsModal">Tùy chọn & Sao chép</button>
+            <button id="create2DXmlBtn" class="btn btn-danger btn-sm"
+                onclick="window.open('./generate-2d-xml.html', '_blank')">Create 2D XML</button>
         </div>
     </header>
     <div class="main-container">
@@ -378,6 +385,73 @@
         </div>
     </div>
 
+    <!-- Toast Container -->
+    <div aria-live="polite" aria-atomic="true" class="toast-container">
+        <!-- Toasts will be appended here -->
+    </div>
+
+    <!-- Options Modal -->
+    <div class="modal fade" id="optionsModal" tabindex="-1" aria-labelledby="optionsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="optionsModalLabel">Tùy chọn & Sao chép</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="container-fluid">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5>Sao chép Dữ liệu</h5>
+                                <button id="copyLineGeometryBtn" class="btn btn-outline-primary btn-block mb-2">Copy
+                                    Line Geometry</button>
+                                <button id="copyStdGeometryBtn" class="btn btn-outline-primary btn-block mb-2">Copy Std
+                                    Geometry</button>
+                                <button id="copyLineMeshBtn" class="btn btn-outline-success btn-block mb-2">Copy Line
+                                    Mesh</button>
+                                <button id="copyStdMeshBtn" class="btn btn-outline-success btn-block mb-2">Copy Std
+                                    Mesh</button>
+                            </div>
+                            <div class="col-md-6">
+                                <h5>Cài đặt Mặc định cho Shape</h5>
+                                <div class="form-group">
+                                    <label for="defaultStdMaterialInput">Default Std Material:</label>
+                                    <input type="text" id="defaultStdMaterialInput" class="form-control form-control-sm"
+                                        placeholder="Ví dụ: R110-0">
+                                </div>
+                                <div class="form-group">
+                                    <label>Default Deform Types:</label>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox"
+                                            id="defaultDeformStretch2Checkbox" checked>
+                                        <label class="form-check-label"
+                                            for="defaultDeformStretch2Checkbox">Stretch2</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox"
+                                            id="defaultDeformClippingCheckbox">
+                                        <label class="form-check-label"
+                                            for="defaultDeformClippingCheckbox">Clipping</label>
+                                    </div>
+                                </div>
+                                <button id="applyDefaultsBtn" class="btn btn-warning btn-block mt-3">Áp dụng cho tất cả
+                                    Shapes hiện tại</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Đóng</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineSegmentsGeometry.js"></script>
@@ -388,7 +462,7 @@
         let shapesData = [];
         let selectedShapeId = null; // Sẽ lưu _internalId của shape được chọn
         let currentJsonString = ''; // Lưu trữ chuỗi JSON hiện tại (chủ yếu cho Line Geometry và 3D view)
-        let currentObjectName = ''; // Lưu trữ Object Name
+        let currentObjectName = 'OBJECT-NAME'; // Lưu trữ Object Name, khởi tạo với giá trị mặc định
 
         // DOM Elements
         const addShapeBtn = document.getElementById('addShapeBtn');
@@ -1101,13 +1175,13 @@
             const shape = shapesData.find(s => s._internalId === selectedShapeId);
             if (!shape || !shape.v[vertexKeyToDelete]) return;
 
-            if (confirm(`Bạn có chắc muốn xóa Vertex ID(${vertexKeyToDelete})? Điều này có thể ảnh hưởng đến Faces và Lines.`)) {
-                delete shape.v[vertexKeyToDelete];
-                // TODO: Consider auto-deleting/updating faces/lines referencing this vertex
-                renderVerticesList(shape);
-                renderJsonOutput();
-                alert("Lưu ý: Faces và Lines tham chiếu đến vertex này có thể không còn hợp lệ.");
-            }
+            // Bỏ confirm, thực hiện xóa trực tiếp
+            // if (confirm(`Bạn có chắc muốn xóa Vertex ID(${vertexKeyToDelete})? Điều này có thể ảnh hưởng đến Faces và Lines.`)) {
+            delete shape.v[vertexKeyToDelete];
+            renderVerticesList(shape);
+            renderJsonOutput();
+            showToast(`Đã xóa Vertex ID(${vertexKeyToDelete}). Lưu ý: Faces và Lines tham chiếu đến vertex này có thể không còn hợp lệ.`, 'warning');
+            // }
         }
 
         addFaceBtn.onclick = () => {
@@ -1124,17 +1198,17 @@
             const faceKey = newFaceKey.toString();
 
             if (!verticesStr) {
-                alert("Danh sách vertices cho face không được để trống.");
+                showToast("Danh sách vertices cho face không được để trống.", 'error');
                 return;
             }
             const verticesIndices = verticesStr.split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v));
             if (verticesIndices.length < 3) {
-                alert("Một face cần ít nhất 3 vertices.");
+                showToast("Một face cần ít nhất 3 vertices.", 'error');
                 return;
             }
             for (let vIndex of verticesIndices) {
                 if (!shape.v[vIndex.toString()]) {
-                    alert(`Vertex ID '${vIndex}' không tồn tại trong danh sách vertices hiện tại của shape.`);
+                    showToast(`Vertex ID '${vIndex}' không tồn tại trong danh sách vertices hiện tại của shape.`, 'error');
                     return;
                 }
             }
@@ -1174,37 +1248,37 @@
             if (!shape) return;
             const verticesStr = lineVerticesInput.value.trim();
             if (!verticesStr) {
-                alert("Vui lòng nhập ID của hai đỉnh, cách nhau bởi dấu phẩy.");
+                showToast("Vui lòng nhập ID của hai đỉnh, cách nhau bởi dấu phẩy.", 'error');
                 return;
             }
             const parts = verticesStr.split(',');
             if (parts.length !== 2) {
-                alert("Định dạng không hợp lệ. Vui lòng nhập hai ID đỉnh, cách nhau bởi dấu phẩy (ví dụ: 0,1).");
+                showToast("Định dạng không hợp lệ. Vui lòng nhập hai ID đỉnh, cách nhau bởi dấu phẩy (ví dụ: 0,1).", 'error');
                 return;
             }
             const v1 = parseInt(parts[0].trim());
             const v2 = parseInt(parts[1].trim());
             if (isNaN(v1) || isNaN(v2)) {
-                alert("ID Vertex phải là số.");
+                showToast("ID Vertex phải là số.", 'error');
                 return;
             }
             if (!shape.v[v1.toString()]) {
-                alert(`Vertex ID '${v1}' không tồn tại trong shape này.`);
+                showToast(`Vertex ID '${v1}' không tồn tại trong shape này.`, 'error');
                 return;
             }
             if (!shape.v[v2.toString()]) {
-                alert(`Vertex ID '${v2}' không tồn tại trong shape này.`);
+                showToast(`Vertex ID '${v2}' không tồn tại trong shape này.`, 'error');
                 return;
             }
             if (v1 === v2) {
-                alert("Một line không thể bắt đầu và kết thúc ở cùng một vertex.");
+                showToast("Một line không thể bắt đầu và kết thúc ở cùng một vertex.", 'error');
                 return;
             }
             const lineExists = shape.lines.some(existingLine =>
                 (existingLine.v1 === v1 && existingLine.v2 === v2) || (existingLine.v1 === v2 && existingLine.v2 === v1)
             );
             if (lineExists) {
-                alert("Line này đã tồn tại.");
+                showToast("Line này đã tồn tại.", 'error');
                 return;
             }
             shape.lines.push({ v1: v1, v2: v2 });
@@ -1379,10 +1453,10 @@
         copyLineMeshBtn.onclick = () => {
             const lineMeshJson = generateLineMeshJsonString();
             navigator.clipboard.writeText(lineMeshJson).then(() => {
-                alert('Đã sao chép Line Mesh JSON vào clipboard!');
+                showToast('Đã sao chép Line Mesh JSON vào clipboard!', 'success');
             }).catch(err => {
                 console.error('Lỗi khi sao chép Line Mesh JSON: ', err);
-                alert('Không thể tự động sao chép Line Mesh JSON. Vui lòng thử lại.');
+                showToast('Không thể tự động sao chép Line Mesh JSON. Vui lòng thử lại.', 'error');
             });
         };
 
@@ -1404,10 +1478,10 @@
         copyStdMeshBtn.onclick = () => {
             const stdMeshJson = generateStdMeshJsonString();
             navigator.clipboard.writeText(stdMeshJson).then(() => {
-                alert('Đã sao chép Std Mesh JSON vào clipboard!');
+                showToast('Đã sao chép Std Mesh JSON vào clipboard!', 'success');
             }).catch(err => {
                 console.error('Lỗi khi sao chép Std Mesh JSON: ', err);
-                alert('Không thể tự động sao chép Std Mesh JSON. Vui lòng thử lại.');
+                showToast('Không thể tự động sao chép Std Mesh JSON. Vui lòng thử lại.', 'error');
             });
         };
 
@@ -1425,14 +1499,14 @@
             try {
                 const textFromClipboard = await navigator.clipboard.readText();
                 if (!textFromClipboard) {
-                    alert("Clipboard rỗng hoặc không chứa dữ liệu text.");
+                    showToast("Clipboard rỗng hoặc không chứa dữ liệu text.", 'info');
                     return;
                 }
 
                 const parsedData = JSON.parse(textFromClipboard);
 
                 if (!parsedData || !Array.isArray(parsedData.shapes)) {
-                    alert("Lỗi: Dữ liệu từ clipboard không phải JSON hợp lệ hoặc không có thuộc tính 'shapes' dạng mảng.");
+                    showToast("Lỗi: Dữ liệu từ clipboard không phải JSON hợp lệ hoặc không có thuộc tính 'shapes' dạng mảng.", 'error');
                     return;
                 }
 
@@ -1443,12 +1517,12 @@
                 );
 
                 if (!isValidShapeStructure) {
-                    alert("Lỗi: Một hoặc nhiều shape trong JSON từ clipboard không có cấu trúc v, faces, hoặc lines hợp lệ.");
+                    showToast("Lỗi: Một hoặc nhiều shape trong JSON từ clipboard không có cấu trúc v, faces, hoặc lines hợp lệ.", 'error');
                     return;
                 }
 
                 if (!currentObjectName || currentObjectName.trim() === "") {
-                    alert("Vui lòng nhập Object Name trước khi import JSON.");
+                    showToast("Vui lòng nhập Object Name trước khi import JSON.", 'warning');
                     objectNameInput.focus();
                     return;
                 }
@@ -1486,11 +1560,11 @@
             } catch (error) {
                 console.error("Lỗi khi import JSON từ clipboard:", error);
                 if (error.name === 'NotAllowedError') {
-                    alert("Lỗi: Không được phép truy cập clipboard. Vui lòng cấp quyền cho trang web.");
+                    showToast("Lỗi: Không được phép truy cập clipboard. Vui lòng cấp quyền cho trang web.", 'error');
                 } else if (error instanceof SyntaxError) {
-                    alert("Lỗi: Dữ liệu trong clipboard không phải là định dạng JSON hợp lệ.");
+                    showToast("Lỗi: Dữ liệu trong clipboard không phải là định dạng JSON hợp lệ.", 'error');
                 } else {
-                    alert("Đã xảy ra lỗi khi đọc hoặc parse JSON từ clipboard. Vui lòng kiểm tra console.");
+                    showToast("Đã xảy ra lỗi khi đọc hoặc parse JSON từ clipboard. Vui lòng kiểm tra console.", 'error');
                 }
             }
         };
@@ -1534,7 +1608,7 @@
             if (defaultDeformClippingCheckbox.checked) defaultDeformTypes.push('Clipping');
 
             if (shapesData.length === 0) {
-                alert("Không có shape nào để áp dụng.");
+                showToast("Không có shape nào để áp dụng.", 'info');
                 return;
             }
 
@@ -1550,40 +1624,93 @@
                 renderSelectedShapeEditor(); // Cập nhật editor nếu có shape đang được chọn
             }
             renderJsonOutput(); // Cập nhật 3D view
-            alert(`Đã áp dụng giá trị mặc định cho ${shapesData.length} shapes.`);
+            showToast(`Đã áp dụng giá trị mặc định cho ${shapesData.length} shapes.`, 'success');
         };
 
         copyLineGeometryBtn.onclick = () => {
             const lineGeometryJsonString = generateJsonString(true); // true để bao gồm lines
             if (!lineGeometryJsonString) {
-                alert('Không có dữ liệu Line Geometry JSON để sao chép.');
+                showToast('Không có dữ liệu Line Geometry JSON để sao chép.', 'info');
                 return;
             }
             navigator.clipboard.writeText(lineGeometryJsonString).then(() => {
-                alert('Đã sao chép Line Geometry JSON vào clipboard!');
+                showToast('Đã sao chép Line Geometry JSON vào clipboard!', 'success');
             }).catch(err => {
                 console.error('Lỗi khi sao chép Line Geometry JSON: ', err);
-                alert('Không thể tự động sao chép JSON. Vui lòng thử lại.');
+                showToast('Không thể tự động sao chép JSON. Vui lòng thử lại.', 'error');
             });
         };
 
         copyStdGeometryBtn.onclick = () => {
             const stdGeometryJsonString = generateJsonString(false); // false để không bao gồm lines
             if (!stdGeometryJsonString) {
-                alert('Không thể tạo Standard Geometry JSON.');
+                showToast('Không thể tạo Standard Geometry JSON.', 'info');
                 return;
             }
             navigator.clipboard.writeText(stdGeometryJsonString).then(() => {
-                alert('Đã sao chép Standard Geometry JSON (không có lines) vào clipboard!');
+                showToast('Đã sao chép Standard Geometry JSON (không có lines) vào clipboard!', 'success');
             }).catch(err => {
                 console.error('Lỗi khi sao chép Standard Geometry JSON: ', err);
-                alert('Không thể tự động sao chép JSON. Vui lòng thử lại.');
+                showToast('Không thể tự động sao chép JSON. Vui lòng thử lại.', 'error');
             });
         };
+
+        // --- Toast Notification Function ---
+        function showToast(message, type = 'info') {
+            const toastContainer = document.querySelector('.toast-container');
+            if (!toastContainer) return; // Should not happen if HTML is correct
+
+            const toastId = 'toast-' + Date.now();
+            let toastHeaderClass = '';
+            let toastIcon = '';
+
+            switch (type) {
+                case 'success':
+                    toastHeaderClass = 'bg-success text-white';
+                    toastIcon = '✔️'; // Simple check icon
+                    break;
+                case 'error':
+                    toastHeaderClass = 'bg-danger text-white';
+                    toastIcon = '❌'; // Simple cross icon
+                    break;
+                case 'warning':
+                    toastHeaderClass = 'bg-warning text-dark';
+                    toastIcon = '⚠️'; // Simple warning icon
+                    break;
+                default: // info
+                    toastHeaderClass = 'bg-info text-white';
+                    toastIcon = 'ℹ️'; // Simple info icon
+                    break;
+            }
+
+            const toastHTML = `
+                <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true" data-delay="5000">
+                    <div class="toast-header ${toastHeaderClass}">
+                        <strong class="mr-auto">${toastIcon} Thông báo</strong>
+                        <button type="button" class="ml-2 mb-1 close" data-dismiss="toast" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="toast-body">
+                        ${message}
+                    </div>
+                </div>
+            `;
+
+            toastContainer.insertAdjacentHTML('beforeend', toastHTML);
+            const toastElement = document.getElementById(toastId);
+            $(toastElement).toast('show'); // Initialize and show the toast using jQuery
+
+            // Optional: Remove the toast from DOM after it's hidden
+            $(toastElement).on('hidden.bs.toast', function () {
+                this.remove();
+            });
+        }
 
         // --- Initialization ---
         function init() {
             // Có thể load dữ liệu mẫu hoặc từ localStorage ở đây
+            objectNameInput.value = currentObjectName; // Đảm bảo input hiển thị giá trị khởi tạo
 
             renderShapesList();
             renderSelectedShapeEditor(); // Ban đầu sẽ ẩn editor
