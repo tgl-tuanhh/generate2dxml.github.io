@@ -546,6 +546,10 @@
         const defaultDeformClippingCheckbox = document.getElementById('defaultDeformClippingCheckbox');
         const applyDefaultsBtn = document.getElementById('applyDefaultsBtn');
 
+        // Raycaster for picking objects
+        let raycaster;
+        let mouse;
+
         // --- Helper function to create text sprites (moved to a more global scope) ---
         function createTextSprite(message, parameters) {
             parameters = parameters || {};
@@ -696,6 +700,11 @@
             createTicksForAxis('z', axisLength, tickStep, tickLength, tickMaterialZ);
             scene.add(ticksGroup);
 
+            // Initialize Raycaster
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+            renderer.domElement.addEventListener('pointerdown', onDocumentMouseDown, false);
+
             // Animation loop for controls damping
             function animate() {
                 requestAnimationFrame(animate);
@@ -747,6 +756,7 @@
                 const isSelected = shape._internalId === selectedShapeId;
 
                 const shapeSpecificGroup = new THREE.Group(); // Group riêng cho mỗi shape
+                shapeSpecificGroup.userData.shapeId = shape._internalId; // Store shapeId for picking
                 shapesGroup.add(shapeSpecificGroup); // Thêm group của shape vào group chính
 
                 const currentLineMaterial = new THREE.LineBasicMaterial({
@@ -1837,6 +1847,40 @@
         }
 
         init();
+
+        // --- Raycaster Click Handler ---
+        function onDocumentMouseDown(event) {
+            event.preventDefault();
+            console.log(event);
+
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(shapesGroup.children, true);
+
+            if (intersects.length > 0) {
+                let clickedObject = intersects[0].object;
+                let parentGroupWithShapeId = null;
+                console.log(clickedObject);
+
+                while (clickedObject && clickedObject !== scene) {
+                    if (clickedObject.userData && clickedObject.userData.shapeId) {
+                        parentGroupWithShapeId = clickedObject;
+                        break;
+                    }
+                    clickedObject = clickedObject.parent;
+                }
+
+                if (parentGroupWithShapeId) {
+                    const shapeId = parentGroupWithShapeId.userData.shapeId;
+                    if (shapeId && shapeId !== selectedShapeId) {
+                        selectShape(shapeId);
+                    }
+                }
+            }
+        }
     </script>
 </body>
 
