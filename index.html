@@ -55,8 +55,10 @@
 
         #importJsonBtn {
             white-space: nowrap;
-            /* min-width: 120px; */
-            /* Có thể bỏ comment nếu cần chiều rộng tối thiểu */
+        }
+
+        #uploadJsonBtn {
+            white-space: nowrap;
         }
 
         /* header button:hover {
@@ -258,6 +260,8 @@
             <input type="text" id="objectNameInput" class="form-control form-control-sm mr-2"
                 placeholder="Nhập Object Name (ví dụ: PFHP-PILLAR-B)" value="OBJECT-NAME">
             <button id="importJsonBtn" class="btn btn-primary btn-sm">Đọc Clipboard</button>
+            <input type="file" id="uploadJsonFile" accept=".json" style="display: none;">
+            <button id="uploadJsonBtn" class="btn btn-secondary btn-sm ml-2">Upload File</button>
         </div>
         <div class="header-controls-group main-actions">
             <button id="openOptionsModalBtn" class="btn btn-info btn-sm mr-2" data-toggle="modal"
@@ -480,6 +484,8 @@
         const copyLineMeshBtn = document.getElementById('copyLineMeshBtn');
         const copyStdMeshBtn = document.getElementById('copyStdMeshBtn');
         const objectNameInput = document.getElementById('objectNameInput');
+        const uploadJsonBtn = document.getElementById('uploadJsonBtn');
+        const uploadJsonFile = document.getElementById('uploadJsonFile');
 
         const shapeEditorContainer = document.getElementById('shapeEditorContainer');
         const noShapeSelectedMsg = document.getElementById('noShapeSelectedMsg');
@@ -1575,6 +1581,110 @@
                     showToast("Đã xảy ra lỗi khi đọc hoặc parse JSON từ clipboard. Vui lòng kiểm tra console.", 'error');
                 }
             }
+        };
+
+        uploadJsonBtn.onclick = () => {
+            uploadJsonFile.click(); // Trigger click event của input file ẩn
+        };
+
+        uploadJsonFile.onchange = async (event) => {
+            const file = event.target.files[0];
+            if (!file) {
+                showToast("Không có file nào được chọn.", 'info');
+                return;
+            }
+
+            if (file.type !== "application/json") {
+                showToast("Vui lòng chọn một file .json hợp lệ.", 'error');
+                event.target.value = null; // Reset input file
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const textFromFile = e.target.result;
+                    if (!textFromFile) {
+                        showToast("File rỗng hoặc không thể đọc.", 'error');
+                        event.target.value = null; // Reset input file
+                        return;
+                    }
+
+                    const parsedData = JSON.parse(textFromFile);
+
+                    if (!parsedData || !Array.isArray(parsedData.shapes)) {
+                        showToast("Lỗi: Dữ liệu từ file không phải JSON hợp lệ hoặc không có thuộc tính 'shapes' dạng mảng.", 'error');
+                        event.target.value = null; // Reset input file
+                        return;
+                    }
+
+                    const isValidShapeStructure = parsedData.shapes.every(shape =>
+                        typeof shape.v === 'object' && shape.v !== null &&
+                        typeof shape.faces === 'object' && shape.faces !== null &&
+                        Array.isArray(shape.lines)
+                    );
+
+                    if (!isValidShapeStructure) {
+                        showToast("Lỗi: Một hoặc nhiều shape trong JSON từ file không có cấu trúc v, faces, hoặc lines hợp lệ.", 'error');
+                        event.target.value = null; // Reset input file
+                        return;
+                    }
+
+                    if (!currentObjectName || currentObjectName.trim() === "") {
+                        showToast("Vui lòng nhập Object Name trước khi import JSON.", 'warning');
+                        objectNameInput.focus();
+                        event.target.value = null; // Reset input file
+                        return;
+                    }
+
+                    shapesData = parsedData.shapes.map((s, index) => {
+                        const internalId = Date.now() + index + Math.random();
+                        return {
+                            _internalId: internalId,
+                            v: s.v || {},
+                            faces: s.faces || {},
+                            lines: s.lines || [],
+                            pivot: s.pivot && Array.isArray(s.pivot) && s.pivot.length === 3 ? s.pivot : [0, 0, 0],
+                            deformTypes: s.deformTypes && Array.isArray(s.deformTypes) ? s.deformTypes : (defaultDeformStretch2Checkbox.checked ? ['Stretch2'] : []).concat(defaultDeformClippingCheckbox.checked ? ['Clipping'] : []),
+                            stdMaterial: s.stdMaterial || defaultStdMaterialInput.value.trim()
+                        };
+                    });
+
+                    selectedShapeId = null;
+                    renderShapesList();
+                    renderSelectedShapeEditor();
+                    renderJsonOutput();
+                    showToast(`Đã import thành công dữ liệu từ file ${file.name}`, 'success');
+
+
+                    if (shapesData.length > 0 && !selectedShapeId) {
+                        // Option: select the first shape automatically after import
+                        // selectShape(shapesData[0]._internalId);
+                    } else if (selectedShapeId) {
+                        const currentSelectedShape = shapesData.find(s => s._internalId === selectedShapeId);
+                        if (currentSelectedShape) {
+                            updateCurrentDeformTypesText(currentSelectedShape.deformTypes);
+                        }
+                    } else {
+                        if (currentDeformTypesText) currentDeformTypesText.textContent = 'None';
+                    }
+                    event.target.value = null; // Reset input file sau khi xử lý thành công
+
+                } catch (error) {
+                    console.error("Lỗi khi import JSON từ file:", error);
+                    if (error instanceof SyntaxError) {
+                        showToast("Lỗi: Dữ liệu trong file không phải là định dạng JSON hợp lệ.", 'error');
+                    } else {
+                        showToast("Đã xảy ra lỗi khi đọc hoặc parse JSON từ file. Vui lòng kiểm tra console.", 'error');
+                    }
+                    event.target.value = null; // Reset input file
+                }
+            };
+            reader.onerror = () => {
+                showToast("Lỗi khi đọc file.", 'error');
+                event.target.value = null; // Reset input file
+            };
+            reader.readAsText(file);
         };
 
         function copyShape(shapeIdToCopy) {
