@@ -2171,9 +2171,27 @@
 
                     // Reset trạng thái tương tác khi mở modal
                     currentModalInteractionMode = 'none';
-                    temporaryNewPoints = [];
+                    temporaryNewPoints = []; // Khởi tạo mảng điểm tạm thời
                     setActiveModalModeButton(null);
                     if (shapeDetailCanvas) shapeDetailCanvas.style.cursor = 'default';
+
+                    // Nạp các điểm hiện có của shape vào temporaryNewPoints để hiển thị
+                    if (currentEditingShapeInModal && currentEditingShapeInModal.v) {
+                        console.log('[OpenModal] Loading existing vertices into temporaryNewPoints. Original vertices:', JSON.stringify(currentEditingShapeInModal.v));
+                        for (const vertexId in currentEditingShapeInModal.v) {
+                            if (Object.hasOwnProperty.call(currentEditingShapeInModal.v, vertexId)) {
+                                const vCoords = currentEditingShapeInModal.v[vertexId]; // [x, y, z]
+                                if (Array.isArray(vCoords) && vCoords.length === 3) {
+                                    temporaryNewPoints.push({ x: vCoords[0], y: vCoords[1], z: vCoords[2], originalId: vertexId }); // Lưu originalId để có thể xử lý sau này
+                                } else {
+                                    console.warn(`[OpenModal] Vertex ${vertexId} has invalid format:`, vCoords);
+                                }
+                            }
+                        }
+                        console.log('[OpenModal] temporaryNewPoints after loading existing vertices:', JSON.stringify(temporaryNewPoints));
+                        // TODO: Cần cơ chế để phân biệt điểm cũ và điểm mới khi LƯU để tránh nhân bản.
+                        // Hiện tại, hàm saveAndCloseModal sẽ coi tất cả điểm trong temporaryNewPoints là điểm mới.
+                    }
 
                     drawModalCanvas();
                 } else {
