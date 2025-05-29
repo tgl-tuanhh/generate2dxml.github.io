@@ -250,6 +250,75 @@
             z-index: 1050;
             /* Ensure toast is above other elements, including modals (Bootstrap modal z-index is 1040/1050) */
         }
+        /* Styles for Shape Canvas Modal */
+        .fullscreen-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 1060; /* Ensure it's above Bootstrap modals (1050) */
+            display: none; /* Hidden by default */
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content-wrapper {
+            background-color: #fff;
+            width: 98%;
+            height: 98%;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,.5);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .modal-header-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .modal-header-controls h5 {
+            margin-bottom: 0;
+        }
+        .modal-main-content {
+            display: flex;
+            flex-grow: 1;
+            height: calc(100% - 70px); /* Adjust based on header height + padding */
+            overflow: hidden; /* Prevent scrollbars on this container */
+        }
+        .modal-canvas-section {
+            flex: 3;
+            padding: 1rem;
+            border-right: 1px solid #dee2e6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden; /* Canvas itself might scroll if larger than container */
+            background-color: #f8f9fa; /* Light background for canvas area */
+        }
+        #shapeDetailCanvas {
+            max-width: 100%;
+            max-height: 100%;
+            border: 1px solid #ced4da;
+            background-color: white;
+        }
+        .modal-info-section {
+            flex: 1;
+            padding: 1rem;
+            overflow-y: auto;
+            background-color: #fff;
+        }
+        .modal-info-section h5 {
+            margin-top: 0;
+            margin-bottom: 0.75rem;
+        }
+        .modal-info-section p {
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 
@@ -283,7 +352,7 @@
         </div>
 
         <div id="editor-panel" class="panel">
-            <h2>Editor</h2>
+            <h2 style="display: flex; align-items: center; justify-content: space-between;"><span>Editor</span><button id="openShapeCanvasModalBtn" class="btn btn-sm btn-light ml-2" style="display: none; padding: 2px 6px; line-height: 1;" title="Mở trình chỉnh sửa canvas"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pencil-square" viewBox="0 0 16 16"><path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.813z"/><path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5z"/></svg></button></h2>
             <div id="shapeEditorContainer" class="hidden">
                 <div class="section">
                     <h3>Thông tin Shape</h3>
@@ -1116,6 +1185,18 @@
             renderShapesList();
             renderSelectedShapeEditor();
             renderJsonOutput(); // Điều này sẽ gọi update3DView và áp dụng highlight
+
+            const editBtn = document.getElementById('openShapeCanvasModalBtn');
+            if (editBtn) {
+                editBtn.style.display = selectedShapeId ? 'inline-block' : 'none';
+            }
+            // Nếu không có shape nào được chọn, đảm bảo modal cũng đóng (nếu đang mở)
+            if (!selectedShapeId) {
+                const shapeCanvasModal = document.getElementById('shapeCanvasModal');
+                if (shapeCanvasModal && shapeCanvasModal.style.display === 'flex') {
+                    shapeCanvasModal.style.display = 'none';
+                }
+            }
         }
 
         function deleteShape(shapeIdToDelete) {
@@ -1881,7 +1962,180 @@
                 }
             }
         }
+
+        // --- Shape Canvas Modal Logic ---
+        let currentEditingShapeInModal = null; // Shape đang được chỉnh sửa trong modal
+        const openShapeCanvasModalBtn = document.getElementById('openShapeCanvasModalBtn');
+
+        if (openShapeCanvasModalBtn) {
+            openShapeCanvasModalBtn.addEventListener('click', () => {
+                const shapeCanvasModal = document.getElementById('shapeCanvasModal');
+                const shapeDetailCanvas = document.getElementById('shapeDetailCanvas');
+                const modalCanvasContainer = document.getElementById('modalCanvasContainer');
+                const shapeCanvasModalTitle = document.getElementById('shapeCanvasModalTitle');
+                const modalInfoContent = document.getElementById('modalInfoContent');
+
+                if (!shapeCanvasModal) {
+                    console.error('Shape Canvas Modal element not found on click!');
+                    showToast('Lỗi: Không tìm thấy modal canvas (click).', 'error');
+                    return;
+                }
+
+                if (!selectedShapeId) {
+                    showToast('Vui lòng chọn một shape để chỉnh sửa.', 'warning');
+                    return;
+                }
+                const shape = shapesData.find(s => s._internalId === selectedShapeId);
+                if (!shape) {
+                    showToast('Không tìm thấy shape được chọn.', 'error');
+                    currentEditingShapeInModal = null;
+                    return;
+                }
+                currentEditingShapeInModal = shape; // Lưu shape đang được focus
+
+                const shapeIndex = shapesData.findIndex(s => s._internalId === shape._internalId);
+                let shapeDisplayName = 'Unnamed Shape';
+                if (shapeIndex !== -1) {
+                    const identifiers = generateShapeIdentifiers(shapeIndex, 'Line'); // Lấy tên dạng 'L'
+                    shapeDisplayName = identifiers.name;
+                }
+
+                console.log('Modal Open: Target title element:', shapeCanvasModalTitle);
+                console.log('Modal Open: Current shape object:', shape);
+                console.log('Modal Open: Shape name to display (from generateShapeIdentifiers):', shapeDisplayName);
+
+                if (shapeCanvasModalTitle) {
+                    shapeCanvasModalTitle.textContent = `Canvas Editor: ${shapeDisplayName}`;
+                }
+                shapeCanvasModal.style.display = 'flex';
+
+                if (shapeDetailCanvas && modalCanvasContainer) {
+                    let shapeDetailCtx = shapeDetailCanvas.getContext('2d');
+                    const containerWidth = modalCanvasContainer.clientWidth;
+                    const containerHeight = modalCanvasContainer.clientHeight;
+                    shapeDetailCanvas.width = containerWidth > 20 ? containerWidth - 20 : 200; 
+                    shapeDetailCanvas.height = containerHeight > 20 ? containerHeight - 20 : 150;
+
+                    shapeDetailCtx.clearRect(0, 0, shapeDetailCanvas.width, shapeDetailCanvas.height);
+                    shapeDetailCtx.fillStyle = '#e9ecef';
+                    shapeDetailCtx.fillRect(0, 0, shapeDetailCanvas.width, shapeDetailCanvas.height);
+                    shapeDetailCtx.fillStyle = 'black';
+                    shapeDetailCtx.font = '16px Arial';
+                    shapeDetailCtx.textAlign = 'center';
+                    shapeDetailCtx.fillText(`Canvas for: ${shapeDisplayName}`, shapeDetailCanvas.width / 2, shapeDetailCanvas.height / 2 - 10);
+                    shapeDetailCtx.fillText(`(Nội dung canvas sẽ được triển khai sau)`, shapeDetailCanvas.width / 2, shapeDetailCanvas.height / 2 + 15);
+                } else {
+                    if (!shapeDetailCanvas) console.error('shapeDetailCanvas not found');
+                    if (!modalCanvasContainer) console.error('modalCanvasContainer not found');
+                }
+
+                if(modalInfoContent) {
+                    modalInfoContent.innerHTML = `<h5>${shapeDisplayName}</h5>
+                                        <p><strong>ID:</strong> ${shape._internalId}</p>
+                                        <p><strong>Loại:</strong> ${shape.type}</p>
+                                        <p><strong>Số đỉnh:</strong> ${Object.keys(shape.vertices).length}</p>
+                                        <p><strong>Số mặt:</strong> ${shape.faces ? shape.faces.length : 0}</p>
+                                        <p><strong>Số đường:</strong> ${shape.lines ? shape.lines.length : 0}</p>
+                                        <!-- Thêm thông tin khác nếu cần -->`;
+                } else {
+                    const modalInfoSection = document.getElementById('modalInfoSection');
+                    if(modalInfoSection) modalInfoSection.innerHTML = '<p>Lỗi khi tải chi tiết shape.</p>';
+                    else console.error('modalInfoContent and modalInfoSection not found');
+                }
+            });
+        }
+
+        // Event listeners for new modal header buttons
+        const viewOxyBtn = document.getElementById('viewOxyBtn');
+        const viewOxzBtn = document.getElementById('viewOxzBtn');
+        const viewOyzBtn = document.getElementById('viewOyzBtn');
+        const modalAddBtn = document.getElementById('modalAddBtn');
+        const modalMoveBtn = document.getElementById('modalMoveBtn');
+
+        if(viewOxyBtn) viewOxyBtn.addEventListener('click', () => {
+            if (!currentEditingShapeInModal) return showToast('Không có shape nào đang được chỉnh sửa.', 'warning');
+            console.log('View Oxy on shape:', currentEditingShapeInModal.name);
+            showToast(`View Oxy cho: ${currentEditingShapeInModal.name}. Sẽ được triển khai sau.`, 'info');
+        });
+        if(viewOxzBtn) viewOxzBtn.addEventListener('click', () => {
+            if (!currentEditingShapeInModal) return showToast('Không có shape nào đang được chỉnh sửa.', 'warning');
+            console.log('View Oxz on shape:', currentEditingShapeInModal.name);
+            showToast(`View Oxz cho: ${currentEditingShapeInModal.name}. Sẽ được triển khai sau.`, 'info');
+        });
+        if(viewOyzBtn) viewOyzBtn.addEventListener('click', () => {
+            if (!currentEditingShapeInModal) return showToast('Không có shape nào đang được chỉnh sửa.', 'warning');
+            console.log('View Oyz on shape:', currentEditingShapeInModal.name);
+            showToast(`View Oyz cho: ${currentEditingShapeInModal.name}. Sẽ được triển khai sau.`, 'info');
+        });
+        if(modalAddBtn) modalAddBtn.addEventListener('click', () => {
+            if (!currentEditingShapeInModal) return showToast('Không có shape nào đang được chỉnh sửa.', 'warning');
+            console.log('Add action related to shape:', currentEditingShapeInModal.name);
+            showToast(`Thêm đối tượng liên quan đến: ${currentEditingShapeInModal.name}. Sẽ được triển khai sau.`, 'info');
+        });
+        if(modalMoveBtn) modalMoveBtn.addEventListener('click', () => {
+            if (!currentEditingShapeInModal) return showToast('Không có shape nào đang được chỉnh sửa.', 'warning');
+            console.log('Move action related to shape:', currentEditingShapeInModal.name);
+            showToast(`Di chuyển đối tượng liên quan đến: ${currentEditingShapeInModal.name}. Sẽ được triển khai sau.`, 'info');
+        });
+
+        function closeShapeEditorModal() {
+            const shapeCanvasModal = document.getElementById('shapeCanvasModal');
+            if (shapeCanvasModal) {
+                shapeCanvasModal.style.display = 'none';
+            }
+            currentEditingShapeInModal = null; // Xóa tham chiếu khi đóng modal
+            // console.log('Modal closed, currentEditingShapeInModal:', currentEditingShapeInModal);
+        }
+
+        // Cập nhật nút đóng trên HTML của modal để gọi hàm này
+        // Ví dụ: onclick="closeShapeEditorModal()"
+
+        window.addEventListener('keydown', (event) => {
+            const shapeCanvasModal = document.getElementById('shapeCanvasModal');
+            if (event.key === 'Escape' && shapeCanvasModal && shapeCanvasModal.style.display === 'flex') {
+                closeShapeEditorModal();
+            }
+        });
     </script>
+    <!-- Fullscreen Shape Canvas Modal -->
+    <div id="shapeCanvasModal" class="fullscreen-modal">
+        <div class="modal-content-wrapper">
+            <div class="modal-header-controls">
+                 <h5 id="shapeCanvasModalTitle">Shape Canvas Editor</h5>
+                 <div class="modal-header-button-groups" style="display: flex; gap: 15px; margin: 0 auto;">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="View Controls">
+                        <button type="button" class="btn btn-outline-secondary" id="viewOxyBtn" title="Chế độ xem Oxy">Oxy</button>
+                        <button type="button" class="btn btn-outline-secondary" id="viewOxzBtn" title="Chế độ xem Oxz">Oxz</button>
+                        <button type="button" class="btn btn-outline-secondary" id="viewOyzBtn" title="Chế độ xem Oyz">Oyz</button>
+                    </div>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Action Controls">
+                        <button type="button" class="btn btn-outline-primary" id="modalAddBtn" title="Thêm đối tượng">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-lg" viewBox="0 0 16 16">
+                                <path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2Z"/>
+                            </svg> Thêm
+                        </button>
+                        <button type="button" class="btn btn-outline-primary" id="modalMoveBtn" title="Di chuyển đối tượng">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrows-move" viewBox="0 0 16 16">
+                                <path fill-rule="evenodd" d="M7.646.146a.5.5 0 0 1 .708 0l2 2a.5.5 0 0 1-.708.708L8.5 1.707V5.5a.5.5 0 0 1-1 0V1.707L6.354 2.854a.5.5 0 1 1-.708-.708l2-2zM8 10a.5.5 0 0 1 .5.5v3.793l1.146-1.147a.5.5 0 0 1 .708.708l-2 2a.5.5 0 0 1-.708 0l-2-2a.5.5 0 0 1 .708-.708L7.5 14.293V10.5A.5.5 0 0 1 8 10zM.146 8.354a.5.5 0 0 1 0-.708l2-2a.5.5 0 1 1 .708.708L1.707 7.5H5.5a.5.5 0 0 1 0 1H1.707l1.147 1.146a.5.5 0 1 1-.708.708l-2-2zM10 8a.5.5 0 0 1 .5-.5h3.793l-1.147-1.146a.5.5 0 0 1 .708-.708l2 2a.5.5 0 0 1 0 .708l-2 2a.5.5 0 0 1-.708-.708L14.293 8.5H10.5A.5.5 0 0 1 10 8z"/>
+                            </svg> Di chuyển
+                        </button>
+                    </div>
+                 </div>
+                 <button id="closeShapeCanvasModalBtn" onclick="closeShapeEditorModal()" class="btn btn-danger btn-sm">Đóng</button>
+            </div>
+            <div class="modal-main-content">
+                <div id="modalCanvasContainer" class="modal-canvas-section">
+                    <canvas id="shapeDetailCanvas"></canvas>
+                </div>
+                <div id="modalInfoSection" class="modal-info-section">
+                    <div id="modalInfoContent"> <!-- Div for dynamic content -->
+                       <h4>Thông tin chi tiết Shape</h4>
+                       <p>Nội dung thông tin sẽ được hiển thị ở đây khi một shape được chọn và modal được mở.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>
