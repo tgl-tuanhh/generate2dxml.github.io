@@ -542,11 +542,15 @@
         let currentModalViewMode = 'oxy'; // Mặc định là Oxy
         const PIXELS_PER_UNIT = 20;
         const GRID_COLOR = '#cccccc';
+
+        // Biến toàn cục cho chế độ tương tác trong modal canvas
+        let currentModalInteractionMode = 'none'; // 'none', 'addPoint', 'moveObject', etc.
+        let temporaryNewPoints = []; // Lưu các điểm mới được thêm ở chế độ addPoint
         const AXIS_COLOR = '#333333';
         const TEXT_COLOR = '#000000';
         // State của ứng dụng
         let shapesData = [];
-        let selectedShapeId = null; // Sẽ lưu _internalId của shape được chọn
+        let selectedShapeId = null;
         let currentJsonString = ''; // Lưu trữ chuỗi JSON hiện tại (chủ yếu cho Line Geometry và 3D view)
         let currentObjectName = 'OBJECT-NAME'; // Lưu trữ Object Name, khởi tạo với giá trị mặc định
 
@@ -671,7 +675,7 @@
             // Khi sizeAttenuation = false, scale này sẽ trực tiếp ảnh hưởng đến kích thước hiển thị trên màn hình.
             // Bạn có thể cần điều chỉnh giá trị này để đạt được kích thước mong muốn.
             const desiredScreenHeightFactor = parameters.worldHeight || 50; // Có thể cần đổi tên và giá trị
-            // Tạm thời giữ nguyên logic scale cũ, nhưng có thể cần điều chỉnh lại 'desiredScreenHeightFactor'
+            // Tạm thởi giữ nguyên logic scale cũ, nhưng có thể cần điều chỉnh lại 'desiredScreenHeightFactor'
             // hoặc cách tính toán scale cho phù hợp với sizeAttenuation = false.
             // Ví dụ, bạn có thể muốn đặt một scale cố định:
             // sprite.scale.set(50, 25, 1); // Ví dụ: rộng 50 units, cao 25 units trên màn hình (cần thử nghiệm)
@@ -1266,18 +1270,43 @@
         }
 
         function copyVertex(vertexKeyToCopy) {
-            if (!selectedShapeId) return;
+            if (!selectedShapeId) {
+                showToast('Vui lòng chọn một shape trước.', 'warning');
+                return;
+            }
             const shape = shapesData.find(s => s._internalId === selectedShapeId);
-            if (!shape || !shape.v[vertexKeyToCopy]) return;
+
+            if (!shape) {
+                showToast('Không tìm thấy shape được chọn.', 'error');
+                return;
+            }
+
+            // Kiểm tra shape.v và vertex nguồn
+            if (typeof shape.v !== 'object' || shape.v === null || !shape.v[vertexKeyToCopy]) {
+                showToast(`Không tìm thấy vertex '${vertexKeyToCopy}' hoặc dữ liệu vertices không hợp lệ.`, 'error');
+                console.warn('[CopyVertex] Invalid shape.v or source vertex. Shape:', shape, 'VertexKey:', vertexKeyToCopy);
+                return;
+            }
 
             const coordsToCopy = [...shape.v[vertexKeyToCopy]];
 
-            const existingKeys = Object.keys(shape.v).map(k => parseInt(k)).filter(k => !isNaN(k));
-            const newKey = existingKeys.length > 0 ? Math.max(...existingKeys) + 1 : 0;
+            // Tạo key mới theo định dạng 'vN', tương tự như trong saveAndCloseModal
+            let nextVertexNum = 1;
+            const existingVertexKeys = Object.keys(shape.v);
+            if (existingVertexKeys.length > 0) {
+                const numericKeys = existingVertexKeys
+                    .map(key => parseInt(key.replace('v', ''), 10))
+                    .filter(num => !isNaN(num));
+                if (numericKeys.length > 0) {
+                    nextVertexNum = Math.max(...numericKeys) + 1;
+                }
+            }
+            const newKey = `v${nextVertexNum}`;
 
-            shape.v[newKey.toString()] = coordsToCopy;
-            renderVerticesList(shape);
-            renderJsonOutput();
+            shape.v[newKey] = coordsToCopy;
+            renderVerticesList(shape); // Vẽ lại danh sách vertices cho shape này
+            renderJsonOutput(); // Cập nhật JSON và 3D view
+            showToast(`Vertex ${vertexKeyToCopy} đã được sao chép thành ${newKey}.`);
         }
 
         function deleteVertex(vertexKeyToDelete) {
@@ -1972,6 +2001,88 @@
         // --- Shape Canvas Modal Logic ---
         let currentEditingShapeInModal = null; // Shape đang được chỉnh sửa trong modal
 
+        function closeShapeEditorModal() {
+            const shapeCanvasModal = document.getElementById('shapeCanvasModal');
+            if (shapeCanvasModal) {
+                shapeCanvasModal.style.display = 'none';
+            }
+            currentEditingShapeInModal = null; // Xóa tham chiếu khi đóng modal
+            // console.log('Modal closed, currentEditingShapeInModal:', currentEditingShapeInModal);
+
+            // Reset trạng thái tương tác
+            currentModalInteractionMode = 'none';
+            temporaryNewPoints = [];
+            setActiveModalModeButton(null); // Bỏ highlight tất cả các nút chế độ
+            const canvas = document.getElementById('shapeDetailCanvas');
+            if (canvas) {
+                canvas.style.cursor = 'default';
+            }
+        }
+
+        function updateShapeInList(updatedShape) {
+            if (!updatedShape || !updatedShape._internalId) {
+                console.error('[UpdateShape] Invalid shape or missing _internalId for update.');
+                return;
+            }
+            // 'shapesData' là mảng toàn cục chứa các shape objects
+            const index = shapesData.findIndex(s => s._internalId === updatedShape._internalId);
+            if (index !== -1) {
+                shapesData[index] = updatedShape;
+                console.log('[UpdateShape] Shape updated in list:', updatedShape);
+            } else {
+                console.warn('[UpdateShape] Shape not found in list for ID:', updatedShape._internalId);
+            }
+        }
+
+        function saveAndCloseModal() {
+            console.log('[SaveModal] Attempting to save changes...');
+            try {
+                if (currentEditingShapeInModal && temporaryNewPoints && temporaryNewPoints.length > 0) {
+                    // Đảm bảo currentEditingShapeInModal.v là một đối tượng
+                    if (typeof currentEditingShapeInModal.v !== 'object' || currentEditingShapeInModal.v === null) {
+                        currentEditingShapeInModal.v = {}; 
+                    }
+
+                    // Xác định ID tiếp theo cho vertex
+                    let nextVertexNum = 1;
+                    const existingVertexKeys = Object.keys(currentEditingShapeInModal.v);
+                    if (existingVertexKeys.length > 0) {
+                        const numericKeys = existingVertexKeys
+                            .map(key => parseInt(key.replace('v', ''), 10))
+                            .filter(num => !isNaN(num));
+                        if (numericKeys.length > 0) {
+                            nextVertexNum = Math.max(...numericKeys) + 1;
+                        }
+                    }
+                    console.log(`[SaveModal] Starting new vertex ID from v${nextVertexNum}`);
+
+                    temporaryNewPoints.forEach((pointObj, index) => {
+                        const newVertexId = `v${nextVertexNum + index}`;
+                        // Chuyển đổi điểm từ {x,y,z} (trong temporaryNewPoints) sang [x,y,z] (cho shape.v)
+                        currentEditingShapeInModal.v[newVertexId] = [pointObj.x, pointObj.y, pointObj.z];
+                        console.log(`[SaveModal] Added vertex ${newVertexId}: [${pointObj.x}, ${pointObj.y}, ${pointObj.z}]`);
+                    });
+
+                    console.log('[SaveModal] Vertices object after adding new points:', JSON.stringify(currentEditingShapeInModal.v));
+                    updateShapeInList(currentEditingShapeInModal);
+                    renderShapesList();
+                    selectShape(currentEditingShapeInModal._internalId);
+                    
+                    showToast(`Đã thêm ${temporaryNewPoints.length} điểm vào shape '${currentEditingShapeInModal.n || currentEditingShapeInModal.name}'.`);
+                } else {
+                    console.log('[SaveModal] No new points to save or no shape currently being edited.');
+                }
+            } catch (error) {
+                console.error('[SaveModal] Error during save operation:', error);
+                showToast('Lỗi: Không thể lưu các thay đổi. Vui lòng kiểm tra Console.', 'error');
+            } finally {
+                closeShapeEditorModal(); // Đảm bảo modal luôn đóng và reset trạng thái
+            }
+        }
+
+        // Cập nhật nút đóng trên HTML của modal để gọi hàm này
+        // Ví dụ: onclick="closeShapeEditorModal()"
+
         document.addEventListener('DOMContentLoaded', () => {
             const openShapeCanvasModalBtn = document.getElementById('openShapeCanvasModalBtn');
 
@@ -2026,6 +2137,13 @@
 
                     currentModalViewMode = 'oxy'; // Đặt lại view mặc định khi mở modal
                     setActiveViewButton('viewOxyBtn'); // Highlight nút mặc định
+
+                    // Reset trạng thái tương tác khi mở modal
+                    currentModalInteractionMode = 'none';
+                    temporaryNewPoints = [];
+                    setActiveModalModeButton(null);
+                    if (shapeDetailCanvas) shapeDetailCanvas.style.cursor = 'default';
+
                     drawModalCanvas();
                 } else {
                     if (!shapeDetailCanvas) console.error('shapeDetailCanvas not found');
@@ -2153,7 +2271,44 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             drawGridAndAxes(ctx, currentModalViewMode, canvas.width, canvas.height);
             // TODO: Gọi drawShapeProjection(...)
+            drawTemporaryPoints(ctx); // Vẽ các điểm tạm thời
             console.log(`Finished drawing grid/axes for view: ${currentModalViewMode}`);
+        }
+
+        function drawTemporaryPoints(ctx) {
+            if (!temporaryNewPoints || temporaryNewPoints.length === 0) return;
+
+            const canvas = document.getElementById('shapeDetailCanvas');
+            if (!canvas) return;
+            const canvasWidth = canvas.width;
+            const canvasHeight = canvas.height;
+            const originX = canvasWidth / 2;
+            const originY = canvasHeight / 2;
+
+            ctx.fillStyle = 'blue'; // Màu cho điểm tạm thời
+            ctx.strokeStyle = 'darkblue';
+            ctx.lineWidth = 1;
+
+            temporaryNewPoints.forEach(point3D => {
+                let pX, pY;
+                // Chuyển đổi từ tọa độ 3D của điểm tạm thời sang 2D trên canvas
+                // dựa trên currentModalViewMode
+                if (currentModalViewMode === 'oxy') {
+                    pX = originX + point3D.x * PIXELS_PER_UNIT;
+                    pY = originY - point3D.y * PIXELS_PER_UNIT; // Y ngược lại trên canvas
+                } else if (currentModalViewMode === 'oxz') {
+                    pX = originX + point3D.x * PIXELS_PER_UNIT;
+                    pY = originY - point3D.z * PIXELS_PER_UNIT; // Z thay cho Y
+                } else if (currentModalViewMode === 'oyz') {
+                    pX = originX + point3D.y * PIXELS_PER_UNIT; // Y thay cho X
+                    pY = originY - point3D.z * PIXELS_PER_UNIT; // Z thay cho Y
+                }
+
+                ctx.beginPath();
+                ctx.arc(pX, pY, 4, 0, 2 * Math.PI); // Vẽ một chấm tròn nhỏ
+                ctx.fill();
+                ctx.stroke();
+            });
         }
 
         function setActiveViewButton(activeButtonId) {
@@ -2172,6 +2327,24 @@
             }
         }
 
+        function setActiveModalModeButton(activeButtonId) {
+            const buttonIds = ['modalAddBtn', 'modalMoveBtn']; // Thêm ID các nút chế độ khác nếu có
+            buttonIds.forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) {
+                    btn.classList.remove('btn-primary'); // Giả sử active là 'btn-primary'
+                    btn.classList.add('btn-outline-primary'); // Inactive là 'btn-outline-primary'
+                }
+            });
+            if (activeButtonId) {
+                const activeBtn = document.getElementById(activeButtonId);
+                if (activeBtn) {
+                    activeBtn.classList.remove('btn-outline-primary');
+                    activeBtn.classList.add('btn-primary');
+                }
+            }
+        }
+
         // Event listeners cho các nút View Control trên Modal
         const viewOxyBtn = document.getElementById('viewOxyBtn');
         const viewOxzBtn = document.getElementById('viewOxzBtn');
@@ -2179,6 +2352,85 @@
         console.log('[ViewControlButtons] viewOxyBtn element:', viewOxyBtn);
         console.log('[ViewControlButtons] viewOxzBtn element:', viewOxzBtn);
         console.log('[ViewControlButtons] viewOyzBtn element:', viewOyzBtn);
+
+        // Event listener cho nút 'Thêm' trên Modal
+        const modalAddBtn = document.getElementById('modalAddBtn');
+        if (modalAddBtn) {
+            modalAddBtn.addEventListener('click', () => {
+                console.log('[ModalMode] Add button clicked.');
+                currentModalInteractionMode = 'addPoint';
+                setActiveModalModeButton('modalAddBtn');
+                const canvas = document.getElementById('shapeDetailCanvas');
+                if (canvas) {
+                    canvas.style.cursor = 'crosshair';
+                }
+                // Tắt highlight của các nút view control nếu cần, hoặc để người dùng tự chọn view trước khi thêm điểm
+            });
+        }
+
+        // Event listener cho việc click trên canvas để thêm điểm
+        const shapeDetailCanvasForClick = document.getElementById('shapeDetailCanvas');
+        if (shapeDetailCanvasForClick) {
+            shapeDetailCanvasForClick.addEventListener('click', (event) => {
+                if (currentModalInteractionMode !== 'addPoint' || !currentEditingShapeInModal) return;
+
+                const canvasRect = shapeDetailCanvasForClick.getBoundingClientRect();
+                
+                // Tọa độ chuột gốc so với viewport
+                // console.log(`[DebugOffset] Mouse Click: clientX=${event.clientX}, clientY=${event.clientY}`);
+                // console.log(`[DebugOffset] Canvas Rect: left=${canvasRect.left}, top=${canvasRect.top}, width=${canvasRect.width}, height=${canvasRect.height}`);
+
+                // Tọa độ chuột so với góc trên bên trái của phần tử canvas
+                let mouseX_relative_to_canvas_element = event.clientX - canvasRect.left;
+                let mouseY_relative_to_canvas_element = event.clientY - canvasRect.top;
+
+                // console.log(`[DebugOffset] Mouse relative to canvas element: x=${mouseX_relative_to_canvas_element}, y=${mouseY_relative_to_canvas_element}`);
+                // console.log(`[DebugOffset] Canvas drawing surface size: width=${shapeDetailCanvasForClick.width}, height=${shapeDetailCanvasForClick.height}`);
+
+                // Điều chỉnh tọa độ chuột nếu kích thước hiển thị của canvas khác với kích thước bề mặt vẽ
+                // (ví dụ: khi canvas được scale bằng CSS)
+                const scaleX = shapeDetailCanvasForClick.width / canvasRect.width;
+                const scaleY = shapeDetailCanvasForClick.height / canvasRect.height;
+                
+                const finalCanvasX = mouseX_relative_to_canvas_element * scaleX;
+                const finalCanvasY = mouseY_relative_to_canvas_element * scaleY;
+
+                // console.log(`[DebugOffset] Scaling factors: scaleX=${scaleX}, scaleY=${scaleY}`);
+                // console.log(`[DebugOffset] Final scaled mouse coords on canvas: x=${finalCanvasX}, y=${finalCanvasY}`);
+
+                const originCanvasX = shapeDetailCanvasForClick.width / 2;
+                const originCanvasY = shapeDetailCanvasForClick.height / 2;
+
+                let point3D = { x: 0, y: 0, z: 0 };
+
+                if (currentModalViewMode === 'oxy') {
+                    point3D.x = (finalCanvasX - originCanvasX) / PIXELS_PER_UNIT;
+                    point3D.y = (originCanvasY - finalCanvasY) / PIXELS_PER_UNIT;
+                    point3D.z = 0;
+                } else if (currentModalViewMode === 'oxz') {
+                    point3D.x = (finalCanvasX - originCanvasX) / PIXELS_PER_UNIT;
+                    point3D.z = (originCanvasY - finalCanvasY) / PIXELS_PER_UNIT;
+                    point3D.y = 0;
+                } else if (currentModalViewMode === 'oyz') {
+                    point3D.y = (finalCanvasX - originCanvasX) / PIXELS_PER_UNIT;
+                    point3D.z = (originCanvasY - finalCanvasY) / PIXELS_PER_UNIT;
+                    point3D.x = 0;
+                }
+                
+                point3D.x = parseFloat(point3D.x.toFixed(2));
+                point3D.y = parseFloat(point3D.y.toFixed(2));
+                point3D.z = parseFloat(point3D.z.toFixed(2));
+
+                // console.log(`[DebugOffset] World coords before PIXELS_PER_UNIT: x_raw=${(finalCanvasX - originCanvasX)}, y_raw=${(originCanvasY - finalCanvasY)} (for Oxy)`);
+                console.log(`[AddPoint] Attempting to add point. Mode: ${currentModalViewMode}, OrigCanvas:(${originCanvasX.toFixed(2)},${originCanvasY.toFixed(2)}), FinalCanvasClick:(${finalCanvasX.toFixed(2)},${finalCanvasY.toFixed(2)}), PIXELS: ${PIXELS_PER_UNIT}`);
+                console.log('[AddPoint] Calculated 3D point:', point3D);
+
+                temporaryNewPoints.push(point3D);
+                // console.log('[AddPoint] Added temporary point:', point3D, 'Total temp points:', temporaryNewPoints.length);
+                drawModalCanvas();
+            });
+        }
+
 
         if (viewOxyBtn) {
             viewOxyBtn.addEventListener('click', () => {
@@ -2220,18 +2472,6 @@
             });
         }
 
-        function closeShapeEditorModal() {
-            const shapeCanvasModal = document.getElementById('shapeCanvasModal');
-            if (shapeCanvasModal) {
-                shapeCanvasModal.style.display = 'none';
-            }
-            currentEditingShapeInModal = null; // Xóa tham chiếu khi đóng modal
-            // console.log('Modal closed, currentEditingShapeInModal:', currentEditingShapeInModal);
-        }
-
-        // Cập nhật nút đóng trên HTML của modal để gọi hàm này
-        // Ví dụ: onclick="closeShapeEditorModal()"
-
         window.addEventListener('keydown', (event) => {
             const shapeCanvasModal = document.getElementById('shapeCanvasModal');
             if (event.key === 'Escape' && shapeCanvasModal && shapeCanvasModal.style.display === 'flex') {
@@ -2265,7 +2505,10 @@
                         </button>
                     </div>
                  </div>
-                 <button id="closeShapeCanvasModalBtn" onclick="closeShapeEditorModal()" class="btn btn-danger btn-sm">Đóng</button>
+                 <div class="btn-group btn-group-sm" role="group" aria-label="Save Cancel Controls">
+                        <button type="button" class="btn btn-success" id="saveModalBtn" onclick="saveAndCloseModal()" title="Lưu thay đổi">Lưu</button>
+                        <button type="button" class="btn btn-secondary" id="cancelModalBtn" onclick="closeShapeEditorModal()" title="Hủy bỏ">Hủy</button>
+                    </div>
             </div>
             <div class="modal-main-content">
                 <div id="modalCanvasContainer" class="modal-canvas-section">
