@@ -1295,13 +1295,13 @@
             const existingVertexKeys = Object.keys(shape.v);
             if (existingVertexKeys.length > 0) {
                 const numericKeys = existingVertexKeys
-                    .map(key => parseInt(key.replace('v', ''), 10))
+                    .map(key => parseInt(String(key).replace('v', ''), 10))
                     .filter(num => !isNaN(num));
                 if (numericKeys.length > 0) {
                     nextVertexNum = Math.max(...numericKeys) + 1;
                 }
             }
-            const newKey = `v${nextVertexNum}`;
+            const newKey = String(nextVertexNum);
 
             shape.v[newKey] = coordsToCopy;
             renderVerticesList(shape); // Vẽ lại danh sách vertices cho shape này
@@ -2045,19 +2045,19 @@
 
                     // Xác định ID tiếp theo cho vertex
                     let nextVertexNum = 1;
-                    const existingVertexKeys = Object.keys(currentEditingShapeInModal.v);
+                    const existingVertexKeys = Object.keys(currentEditingShapeInModal.v || {});
                     if (existingVertexKeys.length > 0) {
                         const numericKeys = existingVertexKeys
-                            .map(key => parseInt(key.replace('v', ''), 10))
+                            .map(key => parseInt(String(key).replace('v', ''), 10))
                             .filter(num => !isNaN(num));
                         if (numericKeys.length > 0) {
                             nextVertexNum = Math.max(...numericKeys) + 1;
                         }
                     }
-                    console.log(`[SaveModal] Starting new vertex ID from v${nextVertexNum}`);
+                    console.log(`[SaveModal] Starting new vertex ID from ${nextVertexNum}`);
 
                     temporaryNewPoints.forEach((pointObj, index) => {
-                        const newVertexId = `v${nextVertexNum + index}`;
+                        const newVertexId = String(nextVertexNum + index);
                         // Chuyển đổi điểm từ {x,y,z} (trong temporaryNewPoints) sang [x,y,z] (cho shape.v)
                         currentEditingShapeInModal.v[newVertexId] = [pointObj.x, pointObj.y, pointObj.z];
                         console.log(`[SaveModal] Added vertex ${newVertexId}: [${pointObj.x}, ${pointObj.y}, ${pointObj.z}]`);
