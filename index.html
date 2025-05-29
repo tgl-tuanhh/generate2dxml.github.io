@@ -545,7 +545,8 @@
 
         // Biến toàn cục cho chế độ tương tác trong modal canvas
         let currentModalInteractionMode = 'none'; // 'none', 'addPoint', 'moveObject', etc.
-        let temporaryNewPoints = []; // Lưu các điểm mới được thêm ở chế độ addPoint
+        let temporaryNewPoints = []; // Mảng lưu các điểm mới được click trên canvas modal
+        let selectedTemporaryPointIndex = -1; // Index của điểm tạm thời đang được chỉnh sửa tọa độ
         const AXIS_COLOR = '#333333';
         const TEXT_COLOR = '#000000';
         // State của ứng dụng
@@ -2010,9 +2011,10 @@
             // console.log('Modal closed, currentEditingShapeInModal:', currentEditingShapeInModal);
 
             // Reset trạng thái tương tác
-            currentModalInteractionMode = 'none';
-            temporaryNewPoints = [];
-            setActiveModalModeButton(null); // Bỏ highlight tất cả các nút chế độ
+            currentModalInteractionMode = 'none'; // Reset mode
+            setActiveModalButton(null);
+            if (modalClickedPointCoordsContainer) modalClickedPointCoordsContainer.style.display = 'none';
+            selectedTemporaryPointIndex = -1; // Bỏ highlight tất cả các nút chế độ
             const canvas = document.getElementById('shapeDetailCanvas');
             if (canvas) {
                 canvas.style.cursor = 'default';
@@ -2031,6 +2033,35 @@
                 console.log('[UpdateShape] Shape updated in list:', updatedShape);
             } else {
                 console.warn('[UpdateShape] Shape not found in list for ID:', updatedShape._internalId);
+            }
+        }
+
+        // Hàm cập nhật tọa độ điểm tạm thời từ input
+        function updateTemporaryPointFromInputs() {
+            console.log('[UpdateTempPoint] Function called. Selected Index:', selectedTemporaryPointIndex);
+            if (selectedTemporaryPointIndex === -1 || !temporaryNewPoints[selectedTemporaryPointIndex]) {
+                console.warn('[UpdateTempPoint] No temporary point selected or invalid index. Current temporaryNewPoints:', JSON.stringify(temporaryNewPoints));
+                return;
+            }
+
+            const currentPoint = temporaryNewPoints[selectedTemporaryPointIndex];
+            console.log(`[UpdateTempPoint] Point ${selectedTemporaryPointIndex} BEFORE update: (${currentPoint.x}, ${currentPoint.y}, ${currentPoint.z})`);
+
+            const newX = parseFloat(modalPointXInput.value);
+            const newY = parseFloat(modalPointYInput.value);
+            const newZ = parseFloat(modalPointZInput.value);
+
+            let changed = false;
+            if (!isNaN(newX) && currentPoint.x !== newX) { currentPoint.x = newX; changed = true; }
+            if (!isNaN(newY) && currentPoint.y !== newY) { currentPoint.y = newY; changed = true; }
+            if (!isNaN(newZ) && currentPoint.z !== newZ) { currentPoint.z = newZ; changed = true; }
+
+            if (changed) {
+                console.log(`[UpdateTempPoint] Point ${selectedTemporaryPointIndex} AFTER update: (${currentPoint.x}, ${currentPoint.y}, ${currentPoint.z})`);
+                console.log('[UpdateTempPoint] Calling drawModalCanvas() to refresh.');
+                drawModalCanvas(); // Vẽ lại toàn bộ modal canvas để phản ánh thay đổi
+            } else {
+                console.log(`[UpdateTempPoint] No change in values for point ${selectedTemporaryPointIndex}.`);
             }
         }
 
@@ -2163,6 +2194,10 @@
                     if(modalInfoSection) modalInfoSection.innerHTML = '<p>Lỗi khi tải chi tiết shape.</p>';
                     else console.error('modalInfoContent and modalInfoSection not found');
                 }
+                if (modalClickedPointCoordsContainer) modalClickedPointCoordsContainer.style.display = 'none'; // Ẩn input tọa độ
+                if (modalPointXInput) modalPointXInput.value = '';
+                if (modalPointYInput) modalPointYInput.value = '';
+                if (modalPointZInput) modalPointZInput.value = '';
             });
         }
 
@@ -2271,7 +2306,7 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             drawGridAndAxes(ctx, currentModalViewMode, canvas.width, canvas.height);
             // TODO: Gọi drawShapeProjection(...)
-            drawTemporaryPoints(ctx); // Vẽ các điểm tạm thời
+            drawTemporaryPoints(ctx); // Vẽ các điểm tạm thởi
             console.log(`Finished drawing grid/axes for view: ${currentModalViewMode}`);
         }
 
@@ -2285,13 +2320,13 @@
             const originX = canvasWidth / 2;
             const originY = canvasHeight / 2;
 
-            ctx.fillStyle = 'blue'; // Màu cho điểm tạm thời
+            ctx.fillStyle = 'blue'; // Màu cho điểm tạm thởi
             ctx.strokeStyle = 'darkblue';
             ctx.lineWidth = 1;
 
             temporaryNewPoints.forEach(point3D => {
                 let pX, pY;
-                // Chuyển đổi từ tọa độ 3D của điểm tạm thời sang 2D trên canvas
+                // Chuyển đổi từ tọa độ 3D của điểm tạm thởi sang 2D trên canvas
                 // dựa trên currentModalViewMode
                 if (currentModalViewMode === 'oxy') {
                     pX = originX + point3D.x * PIXELS_PER_UNIT;
@@ -2303,6 +2338,9 @@
                     pX = originX + point3D.y * PIXELS_PER_UNIT; // Y thay cho X
                     pY = originY - point3D.z * PIXELS_PER_UNIT; // Z thay cho Y
                 }
+                
+                pX = parseFloat(pX.toFixed(2));
+                pY = parseFloat(pY.toFixed(2));
 
                 ctx.beginPath();
                 ctx.arc(pX, pY, 4, 0, 2 * Math.PI); // Vẽ một chấm tròn nhỏ
@@ -2354,7 +2392,16 @@
         console.log('[ViewControlButtons] viewOyzBtn element:', viewOyzBtn);
 
         // Event listener cho nút 'Thêm' trên Modal
+        const modalMessage = document.getElementById('modalMessage'); // For error/info messages
+
+        const modalClickedPointCoordsContainer = document.getElementById('modalClickedPointCoordsContainer');
+        const modalPointXInput = document.getElementById('modalPointX');
+        const modalPointYInput = document.getElementById('modalPointY');
+        const modalPointZInput = document.getElementById('modalPointZ');
+
         const modalAddBtn = document.getElementById('modalAddBtn');
+        const modalSaveBtn = document.getElementById('saveModalBtn');
+
         if (modalAddBtn) {
             modalAddBtn.addEventListener('click', () => {
                 console.log('[ModalMode] Add button clicked.');
@@ -2426,11 +2473,37 @@
                 console.log('[AddPoint] Calculated 3D point:', point3D);
 
                 temporaryNewPoints.push(point3D);
-                // console.log('[AddPoint] Added temporary point:', point3D, 'Total temp points:', temporaryNewPoints.length);
                 drawModalCanvas();
+                selectedTemporaryPointIndex = temporaryNewPoints.length - 1;
+                console.log(`[CanvasClick] Added temporary point: (${point3D.x}, ${point3D.y}, ${point3D.z}), view: ${currentModalViewMode}. Index: ${selectedTemporaryPointIndex}`);
+                // drawTemporaryPoints(shapeCanvasCtx); // Đã được gọi trong drawModalCanvas(), không cần gọi lại ở đây
+
+                // Hiển thị và điền dữ liệu vào input tọa độ
+                console.log('[CanvasClick] Attempting to show coordinate inputs. Current mode:', currentModalInteractionMode);
+                console.log('[CanvasClick] modalClickedPointCoordsContainer exists:', !!modalClickedPointCoordsContainer);
+                if (modalClickedPointCoordsContainer) {
+                    modalClickedPointCoordsContainer.style.display = 'block';
+                    // Sử dụng getComputedStyle để kiểm tra style thực tế được áp dụng
+                    console.log('[CanvasClick] Set display to block. Computed display style:', window.getComputedStyle(modalClickedPointCoordsContainer).display);
+                } else {
+                    console.error('[CanvasClick] modalClickedPointCoordsContainer is null or undefined!');
+                }
+
+                if (modalPointXInput) modalPointXInput.value = point3D.x.toFixed(2);
+                if (modalPointYInput) modalPointYInput.value = point3D.y.toFixed(2);
+                if (modalPointZInput) modalPointZInput.value = point3D.z.toFixed(2);
+                console.log('[CanvasClick] Populated input fields.');
+
+                // Gắn (hoặc cập nhật) event listeners
+                [modalPointXInput, modalPointYInput, modalPointZInput].forEach(input => {
+                    if (input) {
+                        // Gỡ bỏ listener cũ để tránh bị gọi nhiều lần
+                        input.removeEventListener('input', updateTemporaryPointFromInputs);
+                        input.addEventListener('input', updateTemporaryPointFromInputs);
+                    }
+                });
             });
         }
-
 
         if (viewOxyBtn) {
             viewOxyBtn.addEventListener('click', () => {
@@ -2516,8 +2589,23 @@
                 </div>
                 <div id="modalInfoSection" class="modal-info-section">
                     <div id="modalInfoContent"> <!-- Div for dynamic content -->
-                       <h4>Thông tin chi tiết Shape</h4>
+                       <h4>Thông tin</h4>
                        <p>Nội dung thông tin sẽ được hiển thị ở đây khi một shape được chọn và modal được mở.</p>
+                       <div id="modalClickedPointCoordsContainer" style="display:none; margin-top: 10px;">
+                           <h5>Tọa độ điểm đang chọn:</h5>
+                           <div>
+                               <label for="modalPointX" style="display: inline-block; width: 20px;">X:</label>
+                               <input type="number" id="modalPointX" step="any" style="width: calc(100% - 30px); margin-bottom: 5px;">
+                           </div>
+                           <div>
+                               <label for="modalPointY" style="display: inline-block; width: 20px;">Y:</label>
+                               <input type="number" id="modalPointY" step="any" style="width: calc(100% - 30px); margin-bottom: 5px;">
+                           </div>
+                           <div>
+                               <label for="modalPointZ" style="display: inline-block; width: 20px;">Z:</label>
+                               <input type="number" id="modalPointZ" step="any" style="width: calc(100% - 30px);">
+                           </div>
+                       </div>
                     </div>
                 </div>
             </div>
