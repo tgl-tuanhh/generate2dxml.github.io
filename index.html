@@ -538,6 +538,12 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineMaterial.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/lines/LineSegments2.js"></script>
     <script>
+        // Biến toàn cục cho modal canvas view
+        let currentModalViewMode = 'oxy'; // Mặc định là Oxy
+        const PIXELS_PER_UNIT = 20;
+        const GRID_COLOR = '#cccccc';
+        const AXIS_COLOR = '#333333';
+        const TEXT_COLOR = '#000000';
         // State của ứng dụng
         let shapesData = [];
         let selectedShapeId = null; // Sẽ lưu _internalId của shape được chọn
@@ -1965,7 +1971,9 @@
 
         // --- Shape Canvas Modal Logic ---
         let currentEditingShapeInModal = null; // Shape đang được chỉnh sửa trong modal
-        const openShapeCanvasModalBtn = document.getElementById('openShapeCanvasModalBtn');
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const openShapeCanvasModalBtn = document.getElementById('openShapeCanvasModalBtn');
 
         if (openShapeCanvasModalBtn) {
             openShapeCanvasModalBtn.addEventListener('click', () => {
@@ -2016,14 +2024,9 @@
                     shapeDetailCanvas.width = containerWidth > 20 ? containerWidth - 20 : 200; 
                     shapeDetailCanvas.height = containerHeight > 20 ? containerHeight - 20 : 150;
 
-                    shapeDetailCtx.clearRect(0, 0, shapeDetailCanvas.width, shapeDetailCanvas.height);
-                    shapeDetailCtx.fillStyle = '#e9ecef';
-                    shapeDetailCtx.fillRect(0, 0, shapeDetailCanvas.width, shapeDetailCanvas.height);
-                    shapeDetailCtx.fillStyle = 'black';
-                    shapeDetailCtx.font = '16px Arial';
-                    shapeDetailCtx.textAlign = 'center';
-                    shapeDetailCtx.fillText(`Canvas for: ${shapeDisplayName}`, shapeDetailCanvas.width / 2, shapeDetailCanvas.height / 2 - 10);
-                    shapeDetailCtx.fillText(`(Nội dung canvas sẽ được triển khai sau)`, shapeDetailCanvas.width / 2, shapeDetailCanvas.height / 2 + 15);
+                    currentModalViewMode = 'oxy'; // Đặt lại view mặc định khi mở modal
+                    setActiveViewButton('viewOxyBtn'); // Highlight nút mặc định
+                    drawModalCanvas();
                 } else {
                     if (!shapeDetailCanvas) console.error('shapeDetailCanvas not found');
                     if (!modalCanvasContainer) console.error('modalCanvasContainer not found');
@@ -2045,38 +2048,177 @@
             });
         }
 
-        // Event listeners for new modal header buttons
+        function drawGridAndAxes(ctx, viewMode, canvasWidth, canvasHeight) {
+            const gridSize = 20; // Kích thước của mỗi ô lưới
+            const axisColor = '#FF0000'; // Màu đỏ cho trục
+            const gridColor = '#CCCCCC'; // Màu xám cho lưới
+            const textColor = '#000000'; // Màu đen cho chữ
+            const originX = canvasWidth / 2;
+            const originY = canvasHeight / 2;
+
+            // Vẽ lưới
+            ctx.beginPath();
+            ctx.strokeStyle = gridColor;
+            ctx.lineWidth = 0.5;
+
+            // Đường lưới dọc
+            for (let x = originX + gridSize; x < canvasWidth; x += gridSize) {
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvasHeight);
+            }
+            for (let x = originX - gridSize; x > 0; x -= gridSize) {
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvasHeight);
+            }
+            // Đường lưới ngang
+            for (let y = originY + gridSize; y < canvasHeight; y += gridSize) {
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvasWidth, y);
+            }
+            for (let y = originY - gridSize; y > 0; y -= gridSize) {
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvasWidth, y);
+            }
+            ctx.stroke();
+
+            // Vẽ trục tọa độ
+            ctx.beginPath();
+            ctx.strokeStyle = axisColor;
+            ctx.lineWidth = 2;
+            ctx.fillStyle = textColor;
+            ctx.font = '12px Arial';
+
+            let labelX = 'X';
+            let labelY = 'Y'; // Trục dọc trên màn hình
+
+            if (viewMode === 'oxy') {
+                labelX = 'X';
+                labelY = 'Y';
+                // Trục X (ngang)
+                ctx.moveTo(0, originY);
+                ctx.lineTo(canvasWidth, originY);
+                ctx.fillText('X', canvasWidth - 15, originY - 5);
+                // Trục Y (dọc, dương hướng lên)
+                ctx.moveTo(originX, canvasHeight);
+                ctx.lineTo(originX, 0);
+                ctx.fillText('Y', originX + 5, 15);
+            } else if (viewMode === 'oxz') {
+                labelX = 'X';
+                labelY = 'Z';
+                // Trục X (ngang)
+                ctx.moveTo(0, originY);
+                ctx.lineTo(canvasWidth, originY);
+                ctx.fillText('X', canvasWidth - 15, originY - 5);
+                // Trục Z (dọc, dương hướng lên)
+                ctx.moveTo(originX, canvasHeight);
+                ctx.lineTo(originX, 0);
+                ctx.fillText('Z', originX + 5, 15);
+            } else if (viewMode === 'oyz') {
+                labelX = 'Y';
+                labelY = 'Z';
+                // Trục Y (ngang)
+                ctx.moveTo(0, originY);
+                ctx.lineTo(canvasWidth, originY);
+                ctx.fillText('Y', canvasWidth - 15, originY - 5);
+                // Trục Z (dọc, dương hướng lên)
+                ctx.moveTo(originX, canvasHeight);
+                ctx.lineTo(originX, 0);
+                ctx.fillText('Z', originX + 5, 15);
+            }
+            ctx.stroke();
+
+            // Vẽ gốc O
+            ctx.fillText('O', originX - 15, originY + 15);
+
+            console.log(`Grid and axes drawn for view: ${viewMode}. Origin: (${originX},${originY}), Labels: (${labelX}, ${labelY})`);
+        }
+
+        function drawModalCanvas() {
+            const canvas = document.getElementById('shapeDetailCanvas');
+            if (!canvas) {
+                console.error('drawModalCanvas: Canvas element #shapeDetailCanvas not found!');
+                return;
+            }
+            if (!currentEditingShapeInModal) {
+                console.warn('drawModalCanvas: currentEditingShapeInModal is null or undefined. Cannot draw.');
+                return;
+            }
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                console.error('drawModalCanvas: Failed to get 2D context from canvas.');
+                return;
+            }
+            console.log(`Attempting to draw modal canvas. View: ${currentModalViewMode}, Shape ID: ${currentEditingShapeInModal._internalId}, Canvas WxH: ${canvas.width}x${canvas.height}`);
+            // Xóa canvas trước khi vẽ lại
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGridAndAxes(ctx, currentModalViewMode, canvas.width, canvas.height);
+            // TODO: Gọi drawShapeProjection(...)
+            console.log(`Finished drawing grid/axes for view: ${currentModalViewMode}`);
+        }
+
+        function setActiveViewButton(activeButtonId) {
+            const buttonIds = ['viewOxyBtn', 'viewOxzBtn', 'viewOyzBtn'];
+            buttonIds.forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) {
+                    btn.classList.remove('btn-primary');
+                    btn.classList.add('btn-outline-secondary');
+                }
+            });
+            const activeBtn = document.getElementById(activeButtonId);
+            if (activeBtn) {
+                activeBtn.classList.remove('btn-outline-secondary');
+                activeBtn.classList.add('btn-primary');
+            }
+        }
+
+        // Event listeners cho các nút View Control trên Modal
         const viewOxyBtn = document.getElementById('viewOxyBtn');
         const viewOxzBtn = document.getElementById('viewOxzBtn');
         const viewOyzBtn = document.getElementById('viewOyzBtn');
-        const modalAddBtn = document.getElementById('modalAddBtn');
-        const modalMoveBtn = document.getElementById('modalMoveBtn');
+        console.log('[ViewControlButtons] viewOxyBtn element:', viewOxyBtn);
+        console.log('[ViewControlButtons] viewOxzBtn element:', viewOxzBtn);
+        console.log('[ViewControlButtons] viewOyzBtn element:', viewOyzBtn);
 
-        if(viewOxyBtn) viewOxyBtn.addEventListener('click', () => {
-            if (!currentEditingShapeInModal) return showToast('Không có shape nào đang được chỉnh sửa.', 'warning');
-            console.log('View Oxy on shape:', currentEditingShapeInModal.name);
-            showToast(`View Oxy cho: ${currentEditingShapeInModal.name}. Sẽ được triển khai sau.`, 'info');
-        });
-        if(viewOxzBtn) viewOxzBtn.addEventListener('click', () => {
-            if (!currentEditingShapeInModal) return showToast('Không có shape nào đang được chỉnh sửa.', 'warning');
-            console.log('View Oxz on shape:', currentEditingShapeInModal.name);
-            showToast(`View Oxz cho: ${currentEditingShapeInModal.name}. Sẽ được triển khai sau.`, 'info');
-        });
-        if(viewOyzBtn) viewOyzBtn.addEventListener('click', () => {
-            if (!currentEditingShapeInModal) return showToast('Không có shape nào đang được chỉnh sửa.', 'warning');
-            console.log('View Oyz on shape:', currentEditingShapeInModal.name);
-            showToast(`View Oyz cho: ${currentEditingShapeInModal.name}. Sẽ được triển khai sau.`, 'info');
-        });
-        if(modalAddBtn) modalAddBtn.addEventListener('click', () => {
-            if (!currentEditingShapeInModal) return showToast('Không có shape nào đang được chỉnh sửa.', 'warning');
-            console.log('Add action related to shape:', currentEditingShapeInModal.name);
-            showToast(`Thêm đối tượng liên quan đến: ${currentEditingShapeInModal.name}. Sẽ được triển khai sau.`, 'info');
-        });
-        if(modalMoveBtn) modalMoveBtn.addEventListener('click', () => {
-            if (!currentEditingShapeInModal) return showToast('Không có shape nào đang được chỉnh sửa.', 'warning');
-            console.log('Move action related to shape:', currentEditingShapeInModal.name);
-            showToast(`Di chuyển đối tượng liên quan đến: ${currentEditingShapeInModal.name}. Sẽ được triển khai sau.`, 'info');
-        });
+        if (viewOxyBtn) {
+            viewOxyBtn.addEventListener('click', () => {
+                console.log('[ViewControl] viewOxyBtn clicked. Current shape:', currentEditingShapeInModal, 'Mode before change:', currentModalViewMode);
+                if (!currentEditingShapeInModal) {
+                    console.warn('[ViewControl] viewOxyBtn: No currentEditingShapeInModal. Aborting.');
+                    return;
+                }
+                currentModalViewMode = 'oxy';
+                console.log('[ViewControl] viewOxyBtn: Mode set to oxy. Calling setActiveViewButton and drawModalCanvas.');
+                setActiveViewButton('viewOxyBtn');
+                drawModalCanvas();
+            });
+        }
+        if (viewOxzBtn) {
+            viewOxzBtn.addEventListener('click', () => {
+                console.log('[ViewControl] viewOxzBtn clicked. Current shape:', currentEditingShapeInModal, 'Mode before change:', currentModalViewMode);
+                if (!currentEditingShapeInModal) {
+                    console.warn('[ViewControl] viewOxzBtn: No currentEditingShapeInModal. Aborting.');
+                    return;
+                }
+                currentModalViewMode = 'oxz';
+                console.log('[ViewControl] viewOxzBtn: Mode set to oxz. Calling setActiveViewButton and drawModalCanvas.');
+                setActiveViewButton('viewOxzBtn');
+                drawModalCanvas();
+            });
+        }
+        if (viewOyzBtn) {
+            viewOyzBtn.addEventListener('click', () => {
+                console.log('[ViewControl] viewOyzBtn clicked. Current shape:', currentEditingShapeInModal, 'Mode before change:', currentModalViewMode);
+                if (!currentEditingShapeInModal) {
+                    console.warn('[ViewControl] viewOyzBtn: No currentEditingShapeInModal. Aborting.');
+                    return;
+                }
+                currentModalViewMode = 'oyz';
+                console.log('[ViewControl] viewOyzBtn: Mode set to oyz. Calling setActiveViewButton and drawModalCanvas.');
+                setActiveViewButton('viewOyzBtn');
+                drawModalCanvas();
+            });
+        }
 
         function closeShapeEditorModal() {
             const shapeCanvasModal = document.getElementById('shapeCanvasModal');
@@ -2096,6 +2238,8 @@
                 closeShapeEditorModal();
             }
         });
+    }); // Đóng DOMContentLoaded listener
+        
     </script>
     <!-- Fullscreen Shape Canvas Modal -->
     <div id="shapeCanvasModal" class="fullscreen-modal">
