@@ -624,6 +624,11 @@
         const NORMAL_LABEL_BG_COLOR = { r: 50, g: 50, b: 50, a: 0.7 };
         const HIGHLIGHTED_LABEL_BG_COLOR = { r: 255, g: 165, b: 0, a: 0.9 }; // Orange background for labels
 
+        // Variables for modal canvas crosshair and coordinates display
+        let modalCanvasMouseX = null;
+        let modalCanvasMouseY = null;
+        let showCrosshairAndCoords = true; // Toggle for the new feature
+
         // Thêm lại các khai báo biến bị thiếu
         const deformStretch2Checkbox = document.getElementById('deformStretch2Checkbox');
         const deformClippingCheckbox = document.getElementById('deformClippingCheckbox'); // ID này đã được đổi từ deformClipCheckbox
@@ -2633,15 +2638,20 @@ function drawModalCanvas() {
                 console.error('drawModalCanvas: Canvas element #shapeDetailCanvas not found!');
                 return;
             }
-            if (!currentEditingShapeInModal) {
-                console.warn('drawModalCanvas: currentEditingShapeInModal is null or undefined. Cannot draw.');
-                return;
-            }
             const ctx = canvas.getContext('2d');
             if (!ctx) {
                 console.error('drawModalCanvas: Failed to get 2D context from canvas.');
                 return;
             }
+
+            // If not in 'addPoint' mode AND no shape is being edited, then we can't draw meaningfully.
+            // However, if in 'addPoint' mode, we might want to draw grid/crosshair even without a shape.
+            if (currentModalInteractionMode !== 'addPoint' && !currentEditingShapeInModal) {
+                console.warn('drawModalCanvas: currentEditingShapeInModal is null and not in addPoint mode. Cannot draw.');
+                ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas if we are returning early
+                return;
+            }
+            // If in 'addPoint' mode but no shape, we proceed, but some features depending on shape details might use defaults.
             console.log(`Attempting to draw modal canvas. View: ${currentModalViewMode}, Shape ID: ${currentEditingShapeInModal._internalId}, Canvas WxH: ${canvas.width}x${canvas.height}, PPU: ${PIXELS_PER_UNIT.toFixed(2)}, Origin: (${modalOriginX.toFixed(2)}, ${modalOriginY.toFixed(2)})`);
             
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -2650,6 +2660,73 @@ function drawModalCanvas() {
             drawTemporaryPoints(ctx, modalOriginX, modalOriginY, PIXELS_PER_UNIT, currentModalViewMode); 
             // TODO: Gọi drawShapeProjection(...) với các tham số tương tự
 
+            // Draw crosshair and coordinates if mouse is over canvas
+            // Draw crosshair and coordinates if in 'addPoint' mode and mouse is over canvas
+            // Now allows drawing even if currentEditingShapeInModal is null, using default Z/Y/X for the third dimension.
+            if (showCrosshairAndCoords && currentModalInteractionMode === 'addPoint' && modalCanvasMouseX !== null && modalCanvasMouseY !== null && canvas) {
+                console.log('[CrosshairDebug] Drawing crosshair and coords block. Mouse:', modalCanvasMouseX, modalCanvasMouseY, 'Mode:', currentModalInteractionMode, 'ShapeID:', currentEditingShapeInModal._internalId );
+                ctx.save(); // Save context state
+                ctx.strokeStyle = 'rgba(100, 100, 100, 0.7)';
+                ctx.lineWidth = 0.5;
+                ctx.fillStyle = 'black';
+                ctx.font = '10px Arial';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'bottom';
+
+                // Draw horizontal line (clipped to canvas)
+                ctx.beginPath();
+                ctx.moveTo(0, modalCanvasMouseY);
+                ctx.lineTo(canvas.width, modalCanvasMouseY);
+                ctx.stroke();
+
+                // Draw vertical line (clipped to canvas)
+                ctx.beginPath();
+                ctx.moveTo(modalCanvasMouseX, 0);
+                ctx.lineTo(modalCanvasMouseX, canvas.height);
+                ctx.stroke();
+
+                // Calculate world coordinates from modalCanvasMouseX/Y (which are canvas-relative)
+                let worldDspX, worldDspY, worldDspZ; // Coordinates for display
+                if (currentModalViewMode === 'oxy') {
+                    worldDspX = (modalCanvasMouseX - modalOriginX) / PIXELS_PER_UNIT;
+                    worldDspY = (modalOriginY - modalCanvasMouseY) / PIXELS_PER_UNIT;
+                    worldDspZ = (currentEditingShapeInModal && currentEditingShapeInModal.vertices && Object.keys(currentEditingShapeInModal.vertices).length > 0) ? (currentEditingShapeInModal.vertices[Object.keys(currentEditingShapeInModal.vertices)[0]]?.z || 0) : 0;
+                } else if (currentModalViewMode === 'oxz') {
+                    worldDspX = (modalCanvasMouseX - modalOriginX) / PIXELS_PER_UNIT;
+                    worldDspZ = (modalOriginY - modalCanvasMouseY) / PIXELS_PER_UNIT;
+                    worldDspY = (currentEditingShapeInModal && currentEditingShapeInModal.vertices && Object.keys(currentEditingShapeInModal.vertices).length > 0) ? (currentEditingShapeInModal.vertices[Object.keys(currentEditingShapeInModal.vertices)[0]]?.y || 0) : 0;
+                } else if (currentModalViewMode === 'oyz') {
+                    worldDspY = (modalCanvasMouseX - modalOriginX) / PIXELS_PER_UNIT;
+                    worldDspZ = (modalOriginY - modalCanvasMouseY) / PIXELS_PER_UNIT;
+                    worldDspX = (currentEditingShapeInModal && currentEditingShapeInModal.vertices && Object.keys(currentEditingShapeInModal.vertices).length > 0) ? (currentEditingShapeInModal.vertices[Object.keys(currentEditingShapeInModal.vertices)[0]]?.x || 0) : 0;
+                } else {
+                    worldDspX = 0; worldDspY = 0; worldDspZ = 0;
+                }
+
+                const coordText = `(${worldDspX.toFixed(2)}, ${worldDspY.toFixed(2)}, ${worldDspZ.toFixed(2)})`;
+                
+                let textX = modalCanvasMouseX + 8;
+                let textY = modalCanvasMouseY - 8;
+                const textMetrics = ctx.measureText(coordText);
+                const textWidth = textMetrics.width;
+                const textHeight = 10; 
+
+                if (textX + textWidth + 5 > canvas.width) textX = modalCanvasMouseX - textWidth - 8;
+                if (textY - textHeight < 5) textY = modalCanvasMouseY + textHeight + 12; 
+                if (textY + 5 > canvas.height) {
+                    textY = modalCanvasMouseY - 8;
+                    if (textY - textHeight < 5) textY = textHeight + 5;
+                }
+
+                                console.log(`[CrosshairDebug] World Coords: (${worldDspX?.toFixed(2)}, ${worldDspY?.toFixed(2)}, ${worldDspZ?.toFixed(2)})`);
+                console.log(`[CrosshairDebug] coordText: ${coordText}`);
+                console.log(`[CrosshairDebug] Calculated text position before drawing: X=${textX}, Y=${textY}`);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'; 
+                ctx.fillRect(textX - 3, textY - textHeight - 3, textWidth + 6, textHeight + 6);
+                ctx.fillStyle = 'black';
+                ctx.fillText(coordText, textX, textY);
+                ctx.restore();
+            }
             console.log(`Finished drawing canvas for view: ${currentModalViewMode}`);
         }
 
@@ -2765,7 +2842,15 @@ function drawModalCanvas() {
             } else { // Default to 'none' for interactionModeNoneBtn or any other case
                 currentModalInteractionMode = 'none';
             }
-            updateCanvasCursor(); // Centralized cursor update
+            // updateCanvasCursor() will be called regardless of panning, 
+            // but its behavior changes based on isPanningWithRightMouse and currentModalInteractionMode.
+            // If panning, it should ideally ensure the cursor is 'grabbing'.
+            // If not panning, it sets cursor based on interaction mode.
+            updateCanvasCursor();
+
+            if (!isPanningWithRightMouse && showCrosshairAndCoords) {
+                drawModalCanvas(); // Redraw for crosshair if not panning
+            }
             console.log('[ModalMode] Interaction mode set to:', currentModalInteractionMode);
         }
 
@@ -2932,10 +3017,34 @@ function drawModalCanvas() {
         // Event listener for mouse move on modal canvas to update cursor
         const shapeDetailCanvasForCursorUpdate = document.getElementById('shapeDetailCanvas');
         if (shapeDetailCanvasForCursorUpdate) {
-            shapeDetailCanvasForCursorUpdate.addEventListener('mousemove', () => {
-                // No need to check for button press here if not panning, just update cursor based on mode
-                if (!isPanningWithRightMouse) { // Avoid overriding pan cursor
-                   updateCanvasCursor();
+            shapeDetailCanvasForCursorUpdate.addEventListener('mousemove', (event) => {
+                if (showCrosshairAndCoords) {
+                    const coords = getScaledMouseCoordinatesOnCanvas(event, shapeDetailCanvasForCursorUpdate);
+                    modalCanvasMouseX = coords.x;
+                    modalCanvasMouseY = coords.y;
+                } else {
+                    modalCanvasMouseX = null;
+                    modalCanvasMouseY = null;
+                }
+
+                if (!isPanningWithRightMouse) {
+                    updateCanvasCursor(); // Update cursor based on mode if not panning
+                    if (showCrosshairAndCoords && currentModalInteractionMode === 'addPoint') {
+                        drawModalCanvas(); // Redraw for crosshair movement
+                    }
+                } else {
+                    // Panning cursor is handled by global mousemove. 
+                    // drawModalCanvas is also called by global mousemove during panning.
+                    // We've updated modalCanvasMouseX/Y above, so the crosshair during pan will use it.
+                    // No explicit call to updateCanvasCursor() or drawModalCanvas() here to avoid conflict/redundancy.
+                }
+            });
+
+            shapeDetailCanvasForCursorUpdate.addEventListener('mouseleave', () => {
+                if (showCrosshairAndCoords && currentModalInteractionMode === 'addPoint') {
+                    modalCanvasMouseX = null;
+                    modalCanvasMouseY = null;
+                    drawModalCanvas(); // Redraw to remove crosshair
                 }
             });
         }
@@ -3025,7 +3134,14 @@ document.addEventListener('mousemove', (event) => {
         lastPanY = currentMouseY;
 
         // console.log(`[Pan] Mousemove - Delta: (${deltaX.toFixed(2)}, ${deltaY.toFixed(2)}), New Origin: (${modalOriginX.toFixed(2)}, ${modalOriginY.toFixed(2)})`);
-        drawModalCanvas();
+            if (showCrosshairAndCoords && shapeDetailCanvasForZoom) { // shapeDetailCanvasForZoom is the modal canvas
+                const rect = shapeDetailCanvasForZoom.getBoundingClientRect();
+                // Update modalCanvasMouseX/Y based on the global event's clientX/Y
+                // relative to the canvas, as the mouse might be outside the canvas while panning.
+                modalCanvasMouseX = event.clientX - rect.left;
+                modalCanvasMouseY = event.clientY - rect.top;
+            }
+            drawModalCanvas();
     }
 });
 
