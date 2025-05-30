@@ -551,6 +551,12 @@
         let currentModalInteractionMode = 'none'; // 'none', 'addPoint', 'moveObject', etc.
         let temporaryNewPoints = []; // Mảng lưu các điểm mới được click trên canvas modal
         let selectedTemporaryPointIndex = -1; // Index của điểm tạm thời đang được chỉnh sửa tọa độ
+
+        // Biến cho trạng thái pan chuột phải
+        let isPanningWithRightMouse = false;
+        let lastPanX = 0;
+        let lastPanY = 0;
+
         const AXIS_COLOR = '#333333';
         const TEXT_COLOR = '#000000';
         // State của ứng dụng
@@ -2599,7 +2605,26 @@ function calculateNiceGridStep(pixelsPerUnit, minPixelSpacing = 40, maxPixelSpac
             ctx.fillText(axisLabelY, originX + 15, 15);
         }
 
-        function drawModalCanvas() { 
+        // Helper function to get scaled mouse coordinates on canvas
+function getScaledMouseCoordinatesOnCanvas(event, canvasElement) {
+    if (!canvasElement) return { x: 0, y: 0 };
+    const canvasRect = canvasElement.getBoundingClientRect();
+
+    // Mouse coordinates relative to the canvas element's top-left corner
+    const mouseX_relative_to_canvas_element = event.clientX - canvasRect.left;
+    const mouseY_relative_to_canvas_element = event.clientY - canvasRect.top;
+
+    // Adjust mouse coordinates if the canvas's display size is different from its drawing surface size
+    const scaleX = canvasElement.width / canvasRect.width;
+    const scaleY = canvasElement.height / canvasRect.height;
+
+    const finalCanvasX = mouseX_relative_to_canvas_element * scaleX;
+    const finalCanvasY = mouseY_relative_to_canvas_element * scaleY;
+
+    return { x: finalCanvasX, y: finalCanvasY };
+}
+
+function drawModalCanvas() { 
             const canvas = document.getElementById('shapeDetailCanvas');
             if (!canvas) {
                 console.error('drawModalCanvas: Canvas element #shapeDetailCanvas not found!');
@@ -2846,6 +2871,104 @@ function calculateNiceGridStep(pixelsPerUnit, minPixelSpacing = 40, maxPixelSpac
                 });
             });
         }
+
+
+// Event listener for mouse wheel zoom on modal canvas
+const shapeDetailCanvasForZoom = document.getElementById('shapeDetailCanvas');
+if (shapeDetailCanvasForZoom) {
+    shapeDetailCanvasForZoom.addEventListener('wheel', (event) => {
+        event.preventDefault(); // Prevent page scrolling
+
+        if (!currentEditingShapeInModal) return;
+
+        const { x: mouseX, y: mouseY } = getScaledMouseCoordinatesOnCanvas(event, shapeDetailCanvasForZoom);
+
+        let worldPointBeforeZoomX_axis1, worldPointBeforeZoomY_axis2;
+
+        // Determine world coordinates under mouse before zoom based on the current view mode
+        // The first component (worldPointBeforeZoomX_axis1) always corresponds to the first axis of the view mode (X in Oxy/Oxz, Y in Oyz)
+        // The second component (worldPointBeforeZoomY_axis2) always corresponds to the second axis of the view mode (Y in Oxy, Z in Oxz/Oyz)
+        worldPointBeforeZoomX_axis1 = (mouseX - modalOriginX) / PIXELS_PER_UNIT;
+        worldPointBeforeZoomY_axis2 = (modalOriginY - mouseY) / PIXELS_PER_UNIT; // modalOriginY handles canvas Y inversion
+
+        const zoomFactor = event.deltaY < 0 ? 1.1 : 1 / 1.1; // Zoom in or out
+        let newPixelsPerUnit = PIXELS_PER_UNIT * zoomFactor;
+
+        const MIN_PPU_CLAMP = 0.001;
+        const MAX_PPU_CLAMP = 500;
+        newPixelsPerUnit = Math.max(MIN_PPU_CLAMP, Math.min(newPixelsPerUnit, MAX_PPU_CLAMP));
+        
+        if (Math.abs(newPixelsPerUnit - PIXELS_PER_UNIT) < 0.00001) {
+            return; // No significant change in PPU (e.g., hit clamp limit)
+        }
+
+        // Update origins to keep the world point under mouse stationary
+        modalOriginX = mouseX - worldPointBeforeZoomX_axis1 * newPixelsPerUnit;
+        modalOriginY = mouseY + worldPointBeforeZoomY_axis2 * newPixelsPerUnit;
+
+        PIXELS_PER_UNIT = newPixelsPerUnit;
+
+        console.log(`[Zoom] PPU: ${PIXELS_PER_UNIT.toFixed(4)}, Origin: (${modalOriginX.toFixed(2)}, ${modalOriginY.toFixed(2)})`);
+        drawModalCanvas();
+    }, { passive: false }); // passive: false to allow preventDefault
+}
+
+// --- Pan Functionality Start ---
+if (shapeDetailCanvasForZoom) { // Reuse the canvas element from zoom logic
+    // 1. Prevent context menu on right-click
+    shapeDetailCanvasForZoom.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+    });
+
+    // 2. Mousedown to initiate panning
+    shapeDetailCanvasForZoom.addEventListener('mousedown', (event) => {
+        if (event.button === 2) { // Right mouse button
+            if (!currentEditingShapeInModal) return;
+            isPanningWithRightMouse = true;
+            const { x: mouseX, y: mouseY } = getScaledMouseCoordinatesOnCanvas(event, shapeDetailCanvasForZoom);
+            lastPanX = mouseX;
+            lastPanY = mouseY;
+            shapeDetailCanvasForZoom.style.cursor = 'grabbing';
+            // console.log('[Pan] Mousedown - Start Panning');
+        }
+    });
+}
+
+// 3. Mousemove on document to pan (listens on document to allow panning even if mouse leaves canvas)
+document.addEventListener('mousemove', (event) => {
+    if (isPanningWithRightMouse) {
+        if (!currentEditingShapeInModal || !shapeDetailCanvasForZoom) { // Ensure canvas context still valid
+            isPanningWithRightMouse = false;
+            if(shapeDetailCanvasForZoom) shapeDetailCanvasForZoom.style.cursor = 'default';
+            return;
+        }
+        const { x: currentMouseX, y: currentMouseY } = getScaledMouseCoordinatesOnCanvas(event, shapeDetailCanvasForZoom);
+        
+        const deltaX = currentMouseX - lastPanX;
+        const deltaY = currentMouseY - lastPanY;
+
+        modalOriginX += deltaX;
+        modalOriginY += deltaY;
+
+        lastPanX = currentMouseX;
+        lastPanY = currentMouseY;
+
+        // console.log(`[Pan] Mousemove - Delta: (${deltaX.toFixed(2)}, ${deltaY.toFixed(2)}), New Origin: (${modalOriginX.toFixed(2)}, ${modalOriginY.toFixed(2)})`);
+        drawModalCanvas();
+    }
+});
+
+// 4. Mouseup on document to stop panning
+document.addEventListener('mouseup', (event) => {
+    if (event.button === 2 && isPanningWithRightMouse) { // Right mouse button released
+        isPanningWithRightMouse = false;
+        if (shapeDetailCanvasForZoom) { // Check if canvas element exists
+            shapeDetailCanvasForZoom.style.cursor = 'default'; // Reset cursor
+        }
+        // console.log('[Pan] Mouseup - Stop Panning');
+    }
+});
+// --- Pan Functionality End ---
 
         if (viewOxyBtn) {
             viewOxyBtn.addEventListener('click', () => {
