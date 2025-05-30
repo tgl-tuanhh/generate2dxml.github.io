@@ -540,7 +540,11 @@
     <script>
         // Biến toàn cục cho modal canvas view
         let currentModalViewMode = 'oxy'; // Mặc định là Oxy
-        const PIXELS_PER_UNIT = 20;
+        const PIXELS_PER_UNIT_DEFAULT = 20; // For default zoom when no points or single point
+        let PIXELS_PER_UNIT = PIXELS_PER_UNIT_DEFAULT; // Will be dynamically calculated
+        let modalOriginX = 0; // Dynamically calculated origin X for modal canvas
+        let modalOriginY = 0; // Dynamically calculated origin Y for modal canvas
+        const MODAL_CANVAS_PADDING = 40; // Pixels of padding around the content when auto-fitting
         const GRID_COLOR = '#cccccc';
 
         // Biến toàn cục cho chế độ tương tác trong modal canvas
@@ -1965,6 +1969,99 @@
 
         init();
 
+        // --- Modal Canvas View Parameter Calculation ---
+        function calculateAndUpdateModalCanvasViewParams() {
+            const shapeDetailCanvas = document.getElementById('shapeDetailCanvas');
+            if (!shapeDetailCanvas || !currentEditingShapeInModal) {
+                console.warn("calculateAndUpdateModalCanvasViewParams: Canvas or current editing shape not available. Using defaults.");
+                if (shapeDetailCanvas) { // If canvas exists, center origin with default PPU
+                    PIXELS_PER_UNIT = PIXELS_PER_UNIT_DEFAULT;
+                    modalOriginX = shapeDetailCanvas.width / 2;
+                    modalOriginY = shapeDetailCanvas.height / 2;
+                } else { // Fallback if canvas itself is missing (should not happen if modal is open)
+                    PIXELS_PER_UNIT = PIXELS_PER_UNIT_DEFAULT;
+                    modalOriginX = 250; // Arbitrary default
+                    modalOriginY = 250; // Arbitrary default
+                }
+                return;
+            }
+
+            const canvasWidthForCalc = shapeDetailCanvas.width;
+            const canvasHeightForCalc = shapeDetailCanvas.height;
+            // Use temporaryNewPoints for fitting, as these include existing points plus newly added ones
+            const pointsToConsider = temporaryNewPoints; 
+
+            if (pointsToConsider.length > 0) {
+                let minCoord1, maxCoord1, minCoord2, maxCoord2;
+
+                if (currentModalViewMode === 'oxy') {
+                    minCoord1 = Math.min(...pointsToConsider.map(p => p.x));
+                    maxCoord1 = Math.max(...pointsToConsider.map(p => p.x));
+                    minCoord2 = Math.min(...pointsToConsider.map(p => p.y));
+                    maxCoord2 = Math.max(...pointsToConsider.map(p => p.y));
+                } else if (currentModalViewMode === 'oxz') {
+                    minCoord1 = Math.min(...pointsToConsider.map(p => p.x));
+                    maxCoord1 = Math.max(...pointsToConsider.map(p => p.x));
+                    minCoord2 = Math.min(...pointsToConsider.map(p => p.z)); 
+                    maxCoord2 = Math.max(...pointsToConsider.map(p => p.z));
+                } else { // oyz
+                    minCoord1 = Math.min(...pointsToConsider.map(p => p.y)); 
+                    maxCoord1 = Math.max(...pointsToConsider.map(p => p.y));
+                    minCoord2 = Math.min(...pointsToConsider.map(p => p.z)); 
+                    maxCoord2 = Math.max(...pointsToConsider.map(p => p.z));
+                }
+
+                const dataRange1 = (maxCoord1 - minCoord1);
+                const dataRange2 = (maxCoord2 - minCoord2);
+                let scale1 = Infinity, scale2 = Infinity;
+
+                if (dataRange1 > 0.00001) { // Epsilon for floating point comparison
+                    scale1 = (canvasWidthForCalc - MODAL_CANVAS_PADDING * 2) / dataRange1;
+                }
+                if (dataRange2 > 0.00001) {
+                    scale2 = (canvasHeightForCalc - MODAL_CANVAS_PADDING * 2) / dataRange2;
+                }
+                
+                if (pointsToConsider.length === 1 || (dataRange1 <= 0.00001 && dataRange2 <= 0.00001) ) {
+                    PIXELS_PER_UNIT = PIXELS_PER_UNIT_DEFAULT;
+                } else if (dataRange1 <= 0.00001) { // Points form a "vertical" line in current projection
+                    PIXELS_PER_UNIT = (scale2 !== Infinity && scale2 > 0) ? scale2 : PIXELS_PER_UNIT_DEFAULT;
+                } else if (dataRange2 <= 0.00001) { // Points form a "horizontal" line in current projection
+                    PIXELS_PER_UNIT = (scale1 !== Infinity && scale1 > 0) ? scale1 : PIXELS_PER_UNIT_DEFAULT;
+                } else {
+                     PIXELS_PER_UNIT = Math.min(scale1, scale2);
+                }
+                
+                // Clamp PPU. Allow very small PPU for large coordinate ranges.
+        // Max PPU prevents excessive zoom for very small shapes.
+        // Min PPU prevents PPU from becoming zero or negative if calculations are extreme.
+        const MIN_PPU_CLAMP = 0.001; // Allow 1 world unit to be very small in pixels
+        const MAX_PPU_CLAMP = 500;   // Max 500 pixels for one world unit
+
+        if (!(PIXELS_PER_UNIT > 0 && isFinite(PIXELS_PER_UNIT))) {
+            console.warn(`[CalcViewParams] PPU was calculated as non-positive/infinite (${PIXELS_PER_UNIT}). Resetting to default.`);
+            PIXELS_PER_UNIT = PIXELS_PER_UNIT_DEFAULT;
+        }
+        PIXELS_PER_UNIT = Math.max(MIN_PPU_CLAMP, Math.min(PIXELS_PER_UNIT, MAX_PPU_CLAMP));
+
+                const worldCenter1 = (minCoord1 + maxCoord1) / 2;
+                const worldCenter2 = (minCoord2 + maxCoord2) / 2;
+
+                modalOriginX = (canvasWidthForCalc / 2) - (worldCenter1 * PIXELS_PER_UNIT);
+                modalOriginY = (canvasHeightForCalc / 2) + (worldCenter2 * PIXELS_PER_UNIT); // Canvas Y is inverted from world Y/Z
+
+                console.log(`[CalcViewParams] View: ${currentModalViewMode}, DataRange1: (${minCoord1.toFixed(2)}-${maxCoord1.toFixed(2)}), DataRange2: (${minCoord2.toFixed(2)}-${maxCoord2.toFixed(2)})`);
+                console.log(`[CalcViewParams] Calculated PPU: ${PIXELS_PER_UNIT.toFixed(2)}, Origin: (${modalOriginX.toFixed(2)}, ${modalOriginY.toFixed(2)})`);
+
+            } else {
+                // No points, use default zoom and center origin
+                PIXELS_PER_UNIT = PIXELS_PER_UNIT_DEFAULT;
+                modalOriginX = canvasWidthForCalc / 2;
+                modalOriginY = canvasHeightForCalc / 2;
+                console.log('[CalcViewParams] No points. Using default PPU and centered origin.');
+            }
+        }
+
         // --- Raycaster Click Handler ---
         function onDocumentMouseDown(event) {
             event.preventDefault();
@@ -2001,6 +2098,27 @@
 
         // --- Shape Canvas Modal Logic ---
         let currentEditingShapeInModal = null; // Shape đang được chỉnh sửa trong modal
+        const COORD_EPSILON = 0.001; // Ngưỡng để so sánh tọa độ điểm
+
+        // Helper function to get unique points from an array based on an epsilon
+        function getUniquePoints(pointsArray, epsilon) {
+            const unique = [];
+            pointsArray.forEach(p1 => {
+                let isDuplicate = false;
+                for (const p2 of unique) {
+                    if (Math.abs(p1.x - p2.x) < epsilon &&
+                        Math.abs(p1.y - p2.y) < epsilon &&
+                        Math.abs(p1.z - p2.z) < epsilon) {
+                        isDuplicate = true;
+                        break;
+                    }
+                }
+                if (!isDuplicate) {
+                    unique.push(p1);
+                }
+            });
+            return unique;
+        }
 
         function closeShapeEditorModal() {
             const shapeCanvasModal = document.getElementById('shapeCanvasModal');
@@ -2036,7 +2154,7 @@
             }
         }
 
-        // Hàm cập nhật tọa độ điểm tạm thời từ input
+        // Hàm cập nhật tọa độ điểm tạm thởi từ input
         function updateTemporaryPointFromInputs() {
             console.log('[UpdateTempPoint] Function called. Selected Index:', selectedTemporaryPointIndex);
             if (selectedTemporaryPointIndex === -1 || !temporaryNewPoints[selectedTemporaryPointIndex]) {
@@ -2068,41 +2186,83 @@
         function saveAndCloseModal() {
             console.log('[SaveModal] Attempting to save changes...');
             try {
-                if (currentEditingShapeInModal && temporaryNewPoints && temporaryNewPoints.length > 0) {
-                    // Đảm bảo currentEditingShapeInModal.v là một đối tượng
-                    if (typeof currentEditingShapeInModal.v !== 'object' || currentEditingShapeInModal.v === null) {
-                        currentEditingShapeInModal.v = {}; 
-                    }
+                if (!currentEditingShapeInModal) {
+                    console.log('[SaveModal] No shape currently being edited.');
+                    showToast('Không có shape nào đang được chỉnh sửa.', 'info');
+                    // Modal sẽ vẫn đóng trong finally block
+                    return; 
+                }
+                if (!temporaryNewPoints || temporaryNewPoints.length === 0) {
+                    console.log('[SaveModal] No new temporary points to save.');
+                    showToast('Không có điểm tạm thời nào để lưu.', 'info');
+                    // Modal sẽ vẫn đóng trong finally block
+                    return;
+                }
 
-                    // Xác định ID tiếp theo cho vertex
-                    let nextVertexNum = 1;
-                    const existingVertexKeys = Object.keys(currentEditingShapeInModal.v || {});
-                    if (existingVertexKeys.length > 0) {
-                        const numericKeys = existingVertexKeys
-                            .map(key => parseInt(String(key).replace('v', ''), 10))
-                            .filter(num => !isNaN(num));
-                        if (numericKeys.length > 0) {
-                            nextVertexNum = Math.max(...numericKeys) + 1;
+                // 1. Lọc các điểm duy nhất từ temporaryNewPoints
+                const uniqueTempPoints = getUniquePoints(temporaryNewPoints, COORD_EPSILON);
+                if (uniqueTempPoints.length === 0) {
+                    console.log('[SaveModal] All temporary points were duplicates of each other or list was empty after filtering.');
+                    showToast('Không có điểm mới hợp lệ nào để thêm (có thể tất cả đều trùng lặp).', 'info');
+                    // Modal sẽ vẫn đóng trong finally block
+                    return;
+                }
+
+                // Đảm bảo currentEditingShapeInModal.v là một đối tượng
+                if (typeof currentEditingShapeInModal.v !== 'object' || currentEditingShapeInModal.v === null) {
+                    currentEditingShapeInModal.v = {};
+                }
+
+                // 2. Xác định ID tiếp theo cho vertex (ví dụ: v1, v2, vN)
+                let nextVertexNum = 1;
+                const existingVertexKeys = Object.keys(currentEditingShapeInModal.v);
+                if (existingVertexKeys.length > 0) {
+                    const numericKeys = existingVertexKeys
+                        .map(key => parseInt(key.replace('v', ''), 10)) // Lấy phần số từ "vX"
+                        .filter(num => !isNaN(num));
+                    if (numericKeys.length > 0) {
+                        nextVertexNum = Math.max(...numericKeys) + 1;
+                    }
+                }
+                console.log(`[SaveModal] Starting new vertex ID from v${nextVertexNum}`);
+
+                let addedPointsCount = 0;
+                uniqueTempPoints.forEach(pointObj => {
+                    // 3. Kiểm tra trùng lặp với các vertex hiện có trong shape
+                    let isDuplicateWithExisting = false;
+                    for (const vertexKey in currentEditingShapeInModal.v) {
+                        const existingVertexArray = currentEditingShapeInModal.v[vertexKey]; // Dạng [x, y, z]
+                        if (Math.abs(existingVertexArray[0] - pointObj.x) < COORD_EPSILON &&
+                            Math.abs(existingVertexArray[1] - pointObj.y) < COORD_EPSILON &&
+                            Math.abs(existingVertexArray[2] - pointObj.z) < COORD_EPSILON) {
+                            isDuplicateWithExisting = true;
+                            console.log(`[SaveModal] Point (${pointObj.x.toFixed(2)}, ${pointObj.y.toFixed(2)}, ${pointObj.z.toFixed(2)}) is a duplicate of existing vertex ${vertexKey}. Skipping.`);
+                            break;
                         }
                     }
-                    console.log(`[SaveModal] Starting new vertex ID from ${nextVertexNum}`);
 
-                    temporaryNewPoints.forEach((pointObj, index) => {
-                        const newVertexId = String(nextVertexNum + index);
-                        // Chuyển đổi điểm từ {x,y,z} (trong temporaryNewPoints) sang [x,y,z] (cho shape.v)
+                    if (!isDuplicateWithExisting) {
+                        const newVertexId = 'v' + nextVertexNum; // Định dạng ID là "vX"
                         currentEditingShapeInModal.v[newVertexId] = [pointObj.x, pointObj.y, pointObj.z];
-                        console.log(`[SaveModal] Added vertex ${newVertexId}: [${pointObj.x}, ${pointObj.y}, ${pointObj.z}]`);
-                    });
+                        console.log(`[SaveModal] Added vertex ${newVertexId}: [${pointObj.x.toFixed(2)}, ${pointObj.y.toFixed(2)}, ${pointObj.z.toFixed(2)}]`);
+                        nextVertexNum++; // Tăng số hiệu cho ID tiếp theo
+                        addedPointsCount++;
+                    }
+                });
 
+                if (addedPointsCount > 0) {
                     console.log('[SaveModal] Vertices object after adding new points:', JSON.stringify(currentEditingShapeInModal.v));
-                    updateShapeInList(currentEditingShapeInModal);
-                    renderShapesList();
-                    selectShape(currentEditingShapeInModal._internalId);
-                    
-                    showToast(`Đã thêm ${temporaryNewPoints.length} điểm vào shape '${currentEditingShapeInModal.n || currentEditingShapeInModal.name}'.`);
+                    updateShapeInList(currentEditingShapeInModal); // Cập nhật trong danh sách shapesData
+                    renderShapesList(); // Vẽ lại danh sách shape UI
+                    selectShape(currentEditingShapeInModal._internalId); // Chọn lại shape vừa sửa
+                    renderSelectedShapeEditor(); // Cập nhật editor panel
+                    update3DView(); // Cập nhật view 3D
+
+                    showToast(`Đã thêm ${addedPointsCount} điểm mới vào shape '${currentEditingShapeInModal.n || currentEditingShapeInModal.name}'.`);
                 } else {
-                    console.log('[SaveModal] No new points to save or no shape currently being edited.');
+                    showToast('Không có điểm mới nào được thêm (tất cả đều trùng với các điểm đã có hoặc đã tồn tại trong danh sách tạm thời).', 'info');
                 }
+
             } catch (error) {
                 console.error('[SaveModal] Error during save operation:', error);
                 showToast('Lỗi: Không thể lưu các thay đổi. Vui lòng kiểm tra Console.', 'error');
@@ -2171,7 +2331,7 @@
 
                     // Reset trạng thái tương tác khi mở modal
                     currentModalInteractionMode = 'none';
-                    temporaryNewPoints = []; // Khởi tạo mảng điểm tạm thời
+                    temporaryNewPoints = []; // Khởi tạo mảng điểm tạm thởi
                     setActiveModalModeButton(null);
                     if (shapeDetailCanvas) shapeDetailCanvas.style.cursor = 'default';
 
@@ -2193,6 +2353,8 @@
                         // Hiện tại, hàm saveAndCloseModal sẽ coi tất cả điểm trong temporaryNewPoints là điểm mới.
                     }
 
+                    calculateAndUpdateModalCanvasViewParams(); // Calculate PPU and origin
+
                     drawModalCanvas();
                 } else {
                     if (!shapeDetailCanvas) console.error('shapeDetailCanvas not found');
@@ -2203,9 +2365,9 @@
                     modalInfoContent.innerHTML = `<h5>${shapeDisplayName}</h5>
                                         <p><strong>ID:</strong> ${shape._internalId}</p>
                                         <p><strong>Loại:</strong> ${shape.type}</p>
-                                        <p><strong>Số đỉnh:</strong> ${Object.keys(shape.vertices).length}</p>
-                                        <p><strong>Số mặt:</strong> ${shape.faces ? shape.faces.length : 0}</p>
-                                        <p><strong>Số đường:</strong> ${shape.lines ? shape.lines.length : 0}</p>
+                                        <p><strong>Số đỉnh:</strong> ${shape.vertices && typeof shape.vertices === 'object' ? Object.keys(shape.vertices).length : 0}</p>
+                                        <p><strong>Số mặt:</strong> ${shape.faces && Array.isArray(shape.faces) ? shape.faces.length : 0}</p>
+                                        <p><strong>Số đường:</strong> ${shape.lines && Array.isArray(shape.lines) ? shape.lines.length : 0}</p>
                                         <!-- Thêm thông tin khác nếu cần -->`;
                 } else {
                     const modalInfoSection = document.getElementById('modalInfoSection');
@@ -2219,92 +2381,225 @@
             });
         }
 
-        function drawGridAndAxes(ctx, viewMode, canvasWidth, canvasHeight) {
-            const gridSize = 20; // Kích thước của mỗi ô lưới
-            const axisColor = '#FF0000'; // Màu đỏ cho trục
-            const gridColor = '#CCCCCC'; // Màu xám cho lưới
-            const textColor = '#000000'; // Màu đen cho chữ
-            const originX = canvasWidth / 2;
-            const originY = canvasHeight / 2;
+function calculateNiceGridStep(pixelsPerUnit, minPixelSpacing = 40, maxPixelSpacing = 100) {
+    if (pixelsPerUnit <= 0) {
+        return { worldStep: 1, pixelStep: PIXELS_PER_UNIT_DEFAULT }; // Fallback
+    }
 
-            // Vẽ lưới
+    const niceSteps = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.25, 0.5, 1, 2, 2.5, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000];
+    
+    let bestWorldStep = 1;
+    let bestPixelStep = pixelsPerUnit; 
+
+    const targetPixelStep = (minPixelSpacing + maxPixelSpacing) / 2;
+    let smallestDiff = Infinity;
+
+    for (const worldStep of niceSteps) {
+        const currentPixelStep = worldStep * pixelsPerUnit;
+        if (currentPixelStep >= minPixelSpacing && currentPixelStep <= maxPixelSpacing) {
+            const diff = Math.abs(currentPixelStep - targetPixelStep);
+            if (diff < smallestDiff) {
+                smallestDiff = diff;
+                bestWorldStep = worldStep;
+                bestPixelStep = currentPixelStep;
+            }
+        }
+    }
+    
+    if (smallestDiff === Infinity) { // If no step fits the range, find the closest one
+        for (const worldStep of niceSteps) {
+            const currentPixelStep = worldStep * pixelsPerUnit;
+            const diff = Math.abs(currentPixelStep - targetPixelStep);
+            if (diff < smallestDiff) {
+                smallestDiff = diff;
+                bestWorldStep = worldStep;
+                bestPixelStep = currentPixelStep;
+            }
+        }
+    }
+    
+    // Ensure pixelStep is not too small, making grid lines indistinguishable
+    if (bestPixelStep < 5 && pixelsPerUnit > 0) { 
+        for (const worldStep of niceSteps) {
+            if (worldStep * pixelsPerUnit > 5) { // Find first nice step that results in pixelStep > 5
+                bestWorldStep = worldStep;
+                bestPixelStep = worldStep * pixelsPerUnit;
+                break;
+            }
+        }
+        // If still too small (e.g., pixelsPerUnit is extremely small), fallback to a default pixelStep
+        if (bestPixelStep < 5) {
+             bestPixelStep = minPixelSpacing; // Or some other sensible default
+             bestWorldStep = bestPixelStep / pixelsPerUnit;
+        }
+    }
+
+    return { worldStep: bestWorldStep, pixelStep: bestPixelStep };
+}
+
+        function drawGridAndAxes(ctx, viewMode, canvasWidth, canvasHeight, originX, originY, pixelsPerUnit) {
+            const axisColor = '#FF0000'; 
+            const gridColor = '#CCCCCC'; 
+            const textColor = '#000000'; 
+            const lineWidthThin = 0.5;
+            const lineWidthThick = 1;
+
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            // Tính toán bước lưới "đẹp"
+            const { worldStep: gridWorldStep, pixelStep: gridPixelStep } = calculateNiceGridStep(pixelsPerUnit);
+            
+            if (gridPixelStep <= 0) { 
+                console.warn("[drawGridAndAxes] Invalid gridPixelStep:", gridPixelStep, "pixelsPerUnit:", pixelsPerUnit, "Falling back or skipping grid.");
+                // Fallback: Vẽ trục chính nếu pixelsPerUnit hợp lệ
+                if (pixelsPerUnit > 0) {
+                    ctx.beginPath();
+                    ctx.strokeStyle = axisColor;
+                    ctx.lineWidth = lineWidthThick;
+                    ctx.moveTo(0, originY);
+                    ctx.lineTo(canvasWidth, originY);
+                    ctx.moveTo(originX, 0);
+                    ctx.lineTo(originX, canvasHeight);
+                    ctx.stroke();
+                    ctx.fillStyle = textColor;
+                    ctx.fillText('0', originX + 10, originY + 10);
+                }
+                return;
+            }
+
+            // --- Vẽ Lưới ---
             ctx.beginPath();
             ctx.strokeStyle = gridColor;
-            ctx.lineWidth = 0.5;
+            ctx.lineWidth = lineWidthThin;
 
-            // Đường lưới dọc
-            for (let x = originX + gridSize; x < canvasWidth; x += gridSize) {
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, canvasHeight);
+            // Lưới dọc (song song với trục Y của canvas)
+            let currentWorldValX = Math.ceil(((0 - originX) / pixelsPerUnit) / gridWorldStep) * gridWorldStep;
+            let safetyCountX = 0;
+            while (safetyCountX++ < (canvasWidth / gridPixelStep) + 5) { // Safety break
+                const canvasX = originX + currentWorldValX * pixelsPerUnit;
+                if (canvasX > canvasWidth + gridPixelStep) break;
+                if (canvasX >= -gridPixelStep) { // Chỉ vẽ nếu nó gần hoặc trong viewport
+                    ctx.moveTo(canvasX, 0);
+                    ctx.lineTo(canvasX, canvasHeight);
+                }
+                currentWorldValX += gridWorldStep;
             }
-            for (let x = originX - gridSize; x > 0; x -= gridSize) {
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, canvasHeight);
-            }
-            // Đường lưới ngang
-            for (let y = originY + gridSize; y < canvasHeight; y += gridSize) {
-                ctx.moveTo(0, y);
-                ctx.lineTo(canvasWidth, y);
-            }
-            for (let y = originY - gridSize; y > 0; y -= gridSize) {
-                ctx.moveTo(0, y);
-                ctx.lineTo(canvasWidth, y);
+
+            // Lưới ngang (song song với trục X của canvas)
+            // worldY tại đáy canvas (pixel Y = canvasHeight) là ((originY - canvasHeight) / pixelsPerUnit)
+            let currentWorldValY = Math.ceil(((originY - canvasHeight) / pixelsPerUnit) / gridWorldStep) * gridWorldStep;
+            let safetyCountY = 0;
+            while (safetyCountY++ < (canvasHeight / gridPixelStep) + 5) { // Safety break
+                const canvasY = originY - currentWorldValY * pixelsPerUnit; // Trừ vì Y thế giới ngược Y canvas
+                if (canvasY < -gridPixelStep) break;
+                if (canvasY <= canvasHeight + gridPixelStep) { // Chỉ vẽ nếu nó gần hoặc trong viewport
+                    ctx.moveTo(0, canvasY);
+                    ctx.lineTo(canvasWidth, canvasY);
+                }
+                currentWorldValY += gridWorldStep;
             }
             ctx.stroke();
 
-            // Vẽ trục tọa độ
+            // --- Vẽ Trục Tọa Độ --- (Vẫn giữ nguyên, vì trục chính là đường tại originX, originY)
             ctx.beginPath();
             ctx.strokeStyle = axisColor;
-            ctx.lineWidth = 2;
-            ctx.fillStyle = textColor;
-            ctx.font = '12px Arial';
-
-            let labelX = 'X';
-            let labelY = 'Y'; // Trục dọc trên màn hình
-
-            if (viewMode === 'oxy') {
-                labelX = 'X';
-                labelY = 'Y';
-                // Trục X (ngang)
-                ctx.moveTo(0, originY);
-                ctx.lineTo(canvasWidth, originY);
-                ctx.fillText('X', canvasWidth - 15, originY - 5);
-                // Trục Y (dọc, dương hướng lên)
-                ctx.moveTo(originX, canvasHeight);
-                ctx.lineTo(originX, 0);
-                ctx.fillText('Y', originX + 5, 15);
-            } else if (viewMode === 'oxz') {
-                labelX = 'X';
-                labelY = 'Z';
-                // Trục X (ngang)
-                ctx.moveTo(0, originY);
-                ctx.lineTo(canvasWidth, originY);
-                ctx.fillText('X', canvasWidth - 15, originY - 5);
-                // Trục Z (dọc, dương hướng lên)
-                ctx.moveTo(originX, canvasHeight);
-                ctx.lineTo(originX, 0);
-                ctx.fillText('Z', originX + 5, 15);
-            } else if (viewMode === 'oyz') {
-                labelX = 'Y';
-                labelY = 'Z';
-                // Trục Y (ngang)
-                ctx.moveTo(0, originY);
-                ctx.lineTo(canvasWidth, originY);
-                ctx.fillText('Y', canvasWidth - 15, originY - 5);
-                // Trục Z (dọc, dương hướng lên)
-                ctx.moveTo(originX, canvasHeight);
-                ctx.lineTo(originX, 0);
-                ctx.fillText('Z', originX + 5, 15);
-            }
+            ctx.lineWidth = lineWidthThick;
+            ctx.moveTo(0, originY); // Trục X (đường y = world 0)
+            ctx.lineTo(canvasWidth, originY);
+            ctx.moveTo(originX, 0); // Trục Y (đường x = world 0)
+            ctx.lineTo(originX, canvasHeight);
             ctx.stroke();
 
-            // Vẽ gốc O
-            ctx.fillText('O', originX - 15, originY + 15);
+            // --- Vẽ Nhãn Số trên Trục ---
+            ctx.fillStyle = textColor;
+            const labelOffset = 10;
 
-            console.log(`Grid and axes drawn for view: ${viewMode}. Origin: (${originX},${originY}), Labels: (${labelX}, ${labelY})`);
+            function formatLabel(value, step) {
+                if (step >= 1) return String(Math.round(value));
+                const stepStr = String(step);
+                const decimalPlaces = stepStr.includes('.') ? stepStr.split('.')[1].length : 0;
+                return value.toFixed(Math.min(2, decimalPlaces)); // Giới hạn tối đa 2 chữ số thập phân, hoặc theo step
+            }
+
+            // Nhãn trên trục X (dọc theo đường y = originY)
+            if (originY >= -labelOffset && originY <= canvasHeight + labelOffset) { // Chỉ vẽ nếu trục X chính hiển thị
+                currentWorldValX = Math.ceil(((0 - originX) / pixelsPerUnit) / gridWorldStep) * gridWorldStep;
+                safetyCountX = 0;
+                while (safetyCountX++ < (canvasWidth / gridPixelStep) + 5) {
+                    const canvasX = originX + currentWorldValX * pixelsPerUnit;
+                    if (canvasX > canvasWidth + gridPixelStep) break;
+                    if (canvasX >= -gridPixelStep - labelOffset) { // Buffer cho label
+                        if (Math.abs(currentWorldValX) > gridWorldStep * 0.0001 || Math.abs(currentWorldValX) === 0) { // Vẽ '0' nếu là gốc, hoặc các số khác
+                           // Avoid drawing label '0' if originX itself is not on this tick
+                           if (Math.abs(currentWorldValX) === 0 && Math.abs(originX - canvasX) > gridPixelStep * 0.1) {
+                               // This is world 0, but originX (canvas projection of world 0) is not here, so don't label this tick as 0.
+                           } else {
+                               ctx.fillText(formatLabel(currentWorldValX, gridWorldStep), canvasX, originY + labelOffset);
+                           }
+                        }
+                    }
+                    currentWorldValX += gridWorldStep;
+                }
+            }
+
+            // Nhãn trên trục Y (dọc theo đường x = originX)
+            if (originX >= -labelOffset && originX <= canvasWidth + labelOffset) { // Chỉ vẽ nếu trục Y chính hiển thị
+                currentWorldValY = Math.ceil(((originY - canvasHeight) / pixelsPerUnit) / gridWorldStep) * gridWorldStep;
+                safetyCountY = 0;
+                while (safetyCountY++ < (canvasHeight / gridPixelStep) + 5) {
+                    const canvasY = originY - currentWorldValY * pixelsPerUnit;
+                    if (canvasY < -gridPixelStep) break;
+                    if (canvasY <= canvasHeight + gridPixelStep + labelOffset) { // Buffer cho label
+                         if (Math.abs(currentWorldValY) > gridWorldStep * 0.0001 || Math.abs(currentWorldValY) === 0) {
+                            if (Math.abs(currentWorldValY) === 0 && Math.abs(originY - canvasY) > gridPixelStep * 0.1) {
+                                // World 0, but originY is not here.
+                            } else {
+                                ctx.fillText(formatLabel(currentWorldValY, gridWorldStep), originX + labelOffset, canvasY);
+                            }
+                        }
+                    }
+                    currentWorldValY += gridWorldStep;
+                }
+            }
+            
+            // Nhãn gốc tọa độ '0' - vẽ một cách rõ ràng nếu gốc (originX, originY) nằm trong canvas
+            // và chưa được vẽ bởi logic ở trên (trường hợp currentWorldValX/Y là 0)
+            if (originX >= -labelOffset && originX <= canvasWidth + labelOffset && 
+                originY >= -labelOffset && originY <= canvasHeight + labelOffset) {
+                // Check if '0' label for X axis would have been drawn near originX
+                let xZeroDrawn = false;
+                if (originY >= -labelOffset && originY <= canvasHeight + labelOffset) {
+                    if (Math.abs( (0 - originX) / pixelsPerUnit ) < gridWorldStep * 0.5) xZeroDrawn = true;
+                }
+                // Check if '0' label for Y axis would have been drawn near originY
+                let yZeroDrawn = false;
+                if (originX >= -labelOffset && originX <= canvasWidth + labelOffset) {
+                     if (Math.abs( (originY - 0) / pixelsPerUnit ) < gridWorldStep * 0.5) yZeroDrawn = true;
+                }
+                // If origin is a grid intersection and labels for 0 on X and Y axes were already drawn, this specific '0' might be redundant
+                // However, the logic above tries to draw 0 if currentWorldVal is 0.
+                // This explicit '0' ensures it's there if origin itself is on screen.
+                // The conditions in the loops above for currentWorldValX/Y === 0 should ideally handle it.
+                // Let's simplify: if origin is on screen, draw '0'. The loops above might skip it if origin is not a grid line itself.
+                 ctx.fillText('0', originX + labelOffset, originY + labelOffset);
+            }
+
+            // --- Vẽ tên trục ---
+            ctx.font = 'bold 12px Arial';
+            let axisLabelX = 'X';
+            let axisLabelY = 'Y';
+
+            if (viewMode === 'oxy') { axisLabelX = 'X'; axisLabelY = 'Y'; }
+            else if (viewMode === 'oxz') { axisLabelX = 'X'; axisLabelY = 'Z'; }
+            else if (viewMode === 'oyz') { axisLabelX = 'Y'; axisLabelY = 'Z'; }
+
+            ctx.fillText(axisLabelX, canvasWidth - 15, originY - 15);
+            ctx.fillText(axisLabelY, originX + 15, 15);
         }
 
-        function drawModalCanvas() {
+        function drawModalCanvas() { 
             const canvas = document.getElementById('shapeDetailCanvas');
             if (!canvas) {
                 console.error('drawModalCanvas: Canvas element #shapeDetailCanvas not found!');
@@ -2319,24 +2614,24 @@
                 console.error('drawModalCanvas: Failed to get 2D context from canvas.');
                 return;
             }
-            console.log(`Attempting to draw modal canvas. View: ${currentModalViewMode}, Shape ID: ${currentEditingShapeInModal._internalId}, Canvas WxH: ${canvas.width}x${canvas.height}`);
-            // Xóa canvas trước khi vẽ lại
+            console.log(`Attempting to draw modal canvas. View: ${currentModalViewMode}, Shape ID: ${currentEditingShapeInModal._internalId}, Canvas WxH: ${canvas.width}x${canvas.height}, PPU: ${PIXELS_PER_UNIT.toFixed(2)}, Origin: (${modalOriginX.toFixed(2)}, ${modalOriginY.toFixed(2)})`);
+            
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawGridAndAxes(ctx, currentModalViewMode, canvas.width, canvas.height);
-            // TODO: Gọi drawShapeProjection(...)
-            drawTemporaryPoints(ctx); // Vẽ các điểm tạm thởi
-            console.log(`Finished drawing grid/axes for view: ${currentModalViewMode}`);
+            
+            drawGridAndAxes(ctx, currentModalViewMode, canvas.width, canvas.height, modalOriginX, modalOriginY, PIXELS_PER_UNIT);
+            drawTemporaryPoints(ctx, modalOriginX, modalOriginY, PIXELS_PER_UNIT, currentModalViewMode); 
+            // TODO: Gọi drawShapeProjection(...) với các tham số tương tự
+
+            console.log(`Finished drawing canvas for view: ${currentModalViewMode}`);
         }
 
-        function drawTemporaryPoints(ctx) {
+        function drawTemporaryPoints(ctx, originX, originY, pixelsPerUnit, viewMode) {
             if (!temporaryNewPoints || temporaryNewPoints.length === 0) return;
 
             const canvas = document.getElementById('shapeDetailCanvas');
             if (!canvas) return;
             const canvasWidth = canvas.width;
             const canvasHeight = canvas.height;
-            const originX = canvasWidth / 2;
-            const originY = canvasHeight / 2;
 
             ctx.fillStyle = 'blue'; // Màu cho điểm tạm thởi
             ctx.strokeStyle = 'darkblue';
@@ -2345,25 +2640,38 @@
             temporaryNewPoints.forEach(point3D => {
                 let pX, pY;
                 // Chuyển đổi từ tọa độ 3D của điểm tạm thởi sang 2D trên canvas
-                // dựa trên currentModalViewMode
-                if (currentModalViewMode === 'oxy') {
-                    pX = originX + point3D.x * PIXELS_PER_UNIT;
-                    pY = originY - point3D.y * PIXELS_PER_UNIT; // Y ngược lại trên canvas
-                } else if (currentModalViewMode === 'oxz') {
-                    pX = originX + point3D.x * PIXELS_PER_UNIT;
-                    pY = originY - point3D.z * PIXELS_PER_UNIT; // Z thay cho Y
-                } else if (currentModalViewMode === 'oyz') {
-                    pX = originX + point3D.y * PIXELS_PER_UNIT; // Y thay cho X
-                    pY = originY - point3D.z * PIXELS_PER_UNIT; // Z thay cho Y
+                // dựa trên viewMode (tham số của hàm)
+                if (viewMode === 'oxy') {
+                    pX = originX + point3D.x * pixelsPerUnit;
+                    pY = originY - point3D.y * pixelsPerUnit; // Y ngược lại trên canvas
+                } else if (viewMode === 'oxz') {
+                    pX = originX + point3D.x * pixelsPerUnit;
+                    pY = originY - point3D.z * pixelsPerUnit; // Z thay cho Y
+                } else if (viewMode === 'oyz') {
+                    pX = originX + point3D.y * pixelsPerUnit; // Y thay cho X
+                    pY = originY - point3D.z * pixelsPerUnit; // Z thay cho Y
+                } else {
+                    console.warn(`drawTemporaryPoints: Unknown viewMode '${viewMode}' for point ${JSON.stringify(point3D)}`);
+                    return; // Bỏ qua điểm này nếu viewMode không xác định
                 }
-                
-                pX = parseFloat(pX.toFixed(2));
-                pY = parseFloat(pY.toFixed(2));
 
+                // Vẽ điểm
                 ctx.beginPath();
-                ctx.arc(pX, pY, 4, 0, 2 * Math.PI); // Vẽ một chấm tròn nhỏ
+                ctx.arc(pX, pY, 5, 0, 2 * Math.PI); // Vẽ vòng tròn nhỏ
                 ctx.fill();
                 ctx.stroke();
+
+                // Hiển thị tọa độ bên cạnh điểm (tọa độ thế giới 3D)
+                ctx.fillStyle = 'black';
+                ctx.font = '10px Arial';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'bottom';
+                let coordText = '';
+                if (viewMode === 'oxy') coordText = `(${point3D.x.toFixed(1)}, ${point3D.y.toFixed(1)})`;
+                else if (viewMode === 'oxz') coordText = `(${point3D.x.toFixed(1)}, ${point3D.z.toFixed(1)})`;
+                else if (viewMode === 'oyz') coordText = `(${point3D.y.toFixed(1)}, ${point3D.z.toFixed(1)})`;
+                
+                ctx.fillText(coordText, pX + 7, pY - 7);
             });
         }
 
@@ -2463,22 +2771,21 @@
                 // console.log(`[DebugOffset] Scaling factors: scaleX=${scaleX}, scaleY=${scaleY}`);
                 // console.log(`[DebugOffset] Final scaled mouse coords on canvas: x=${finalCanvasX}, y=${finalCanvasY}`);
 
-                const originCanvasX = shapeDetailCanvasForClick.width / 2;
-                const originCanvasY = shapeDetailCanvasForClick.height / 2;
-
+                // modalOriginX and modalOriginY are calculated in calculateAndUpdateModalCanvasViewParams
+                // and represent the canvas coordinates of the world origin (0,0) for the current view.
                 let point3D = { x: 0, y: 0, z: 0 };
 
                 if (currentModalViewMode === 'oxy') {
-                    point3D.x = (finalCanvasX - originCanvasX) / PIXELS_PER_UNIT;
-                    point3D.y = (originCanvasY - finalCanvasY) / PIXELS_PER_UNIT;
+                    point3D.x = (finalCanvasX - modalOriginX) / PIXELS_PER_UNIT;
+                    point3D.y = (modalOriginY - finalCanvasY) / PIXELS_PER_UNIT; // modalOriginY already accounts for inverted Y
                     point3D.z = 0;
                 } else if (currentModalViewMode === 'oxz') {
-                    point3D.x = (finalCanvasX - originCanvasX) / PIXELS_PER_UNIT;
-                    point3D.z = (originCanvasY - finalCanvasY) / PIXELS_PER_UNIT;
+                    point3D.x = (finalCanvasX - modalOriginX) / PIXELS_PER_UNIT;
+                    point3D.z = (modalOriginY - finalCanvasY) / PIXELS_PER_UNIT; // modalOriginY for Z in OXZ view
                     point3D.y = 0;
                 } else if (currentModalViewMode === 'oyz') {
-                    point3D.y = (finalCanvasX - originCanvasX) / PIXELS_PER_UNIT;
-                    point3D.z = (originCanvasY - finalCanvasY) / PIXELS_PER_UNIT;
+                    point3D.y = (finalCanvasX - modalOriginX) / PIXELS_PER_UNIT; // modalOriginX for Y in OYZ view (first coord)
+                    point3D.z = (modalOriginY - finalCanvasY) / PIXELS_PER_UNIT; // modalOriginY for Z in OYZ view (second coord)
                     point3D.x = 0;
                 }
                 
@@ -2487,8 +2794,25 @@
                 point3D.z = parseFloat(point3D.z.toFixed(2));
 
                 // console.log(`[DebugOffset] World coords before PIXELS_PER_UNIT: x_raw=${(finalCanvasX - originCanvasX)}, y_raw=${(originCanvasY - finalCanvasY)} (for Oxy)`);
-                console.log(`[AddPoint] Attempting to add point. Mode: ${currentModalViewMode}, OrigCanvas:(${originCanvasX.toFixed(2)},${originCanvasY.toFixed(2)}), FinalCanvasClick:(${finalCanvasX.toFixed(2)},${finalCanvasY.toFixed(2)}), PIXELS: ${PIXELS_PER_UNIT}`);
+                console.log(`[AddPoint] Attempting to add point. Mode: ${currentModalViewMode}, FinalCanvasClick:(${finalCanvasX.toFixed(2)},${finalCanvasY.toFixed(2)}), PIXELS: ${PIXELS_PER_UNIT.toFixed(4)}`);
                 console.log('[AddPoint] Calculated 3D point:', point3D);
+
+                // Diagnostic: Convert back to canvas coordinates to check consistency
+                let recalculatedCanvasX, recalculatedCanvasY;
+                if (currentModalViewMode === 'oxy') {
+                    recalculatedCanvasX = modalOriginX + point3D.x * PIXELS_PER_UNIT;
+                    recalculatedCanvasY = modalOriginY - point3D.y * PIXELS_PER_UNIT;
+                } else if (currentModalViewMode === 'oxz') {
+                    recalculatedCanvasX = modalOriginX + point3D.x * PIXELS_PER_UNIT;
+                    recalculatedCanvasY = modalOriginY - point3D.z * PIXELS_PER_UNIT;
+                } else if (currentModalViewMode === 'oyz') {
+                    recalculatedCanvasX = modalOriginX + point3D.y * PIXELS_PER_UNIT;
+                    recalculatedCanvasY = modalOriginY - point3D.z * PIXELS_PER_UNIT;
+                }
+                console.log(`[CoordCheck] Original click (scaled): (${finalCanvasX.toFixed(2)}, ${finalCanvasY.toFixed(2)})`);
+                console.log(`[CoordCheck] World point: (${point3D.x.toFixed(2)}, ${point3D.y.toFixed(2)}, ${point3D.z.toFixed(2)})`);
+                console.log(`[CoordCheck] Recalculated canvas coords: (${recalculatedCanvasX.toFixed(2)}, ${recalculatedCanvasY.toFixed(2)})`);
+                console.log(`[CoordCheck] modalOrigin: (${modalOriginX.toFixed(2)}, ${modalOriginY.toFixed(2)}), PPU: ${PIXELS_PER_UNIT.toFixed(4)}`);
 
                 temporaryNewPoints.push(point3D);
                 drawModalCanvas();
