@@ -2195,92 +2195,91 @@
         }
 
         function saveAndCloseModal() {
-            console.log('[SaveModal] Attempting to save changes...');
-            try {
-                if (!currentEditingShapeInModal) {
-                    console.log('[SaveModal] No shape currently being edited.');
-                    showToast('Không có shape nào đang được chỉnh sửa.', 'info');
-                    // Modal sẽ vẫn đóng trong finally block
-                    return; 
-                }
-                if (!temporaryNewPoints || temporaryNewPoints.length === 0) {
-                    console.log('[SaveModal] No new temporary points to save.');
-                    showToast('Không có điểm tạm thời nào để lưu.', 'info');
-                    // Modal sẽ vẫn đóng trong finally block
-                    return;
-                }
-
-                // 1. Lọc các điểm duy nhất từ temporaryNewPoints
-                const uniqueTempPoints = getUniquePoints(temporaryNewPoints, COORD_EPSILON);
-                if (uniqueTempPoints.length === 0) {
-                    console.log('[SaveModal] All temporary points were duplicates of each other or list was empty after filtering.');
-                    showToast('Không có điểm mới hợp lệ nào để thêm (có thể tất cả đều trùng lặp).', 'info');
-                    // Modal sẽ vẫn đóng trong finally block
-                    return;
-                }
-
-                // Đảm bảo currentEditingShapeInModal.v là một đối tượng
-                if (typeof currentEditingShapeInModal.v !== 'object' || currentEditingShapeInModal.v === null) {
-                    currentEditingShapeInModal.v = {};
-                }
-
-                // 2. Xác định ID tiếp theo cho vertex (ví dụ: v1, v2, vN)
-                let nextVertexNum = 1;
-                const existingVertexKeys = Object.keys(currentEditingShapeInModal.v);
-                if (existingVertexKeys.length > 0) {
-                    const numericKeys = existingVertexKeys
-                        .map(key => parseInt(key.replace('v', ''), 10)) // Lấy phần số từ "vX"
-                        .filter(num => !isNaN(num));
-                    if (numericKeys.length > 0) {
-                        nextVertexNum = Math.max(...numericKeys) + 1;
-                    }
-                }
-                console.log(`[SaveModal] Starting new vertex ID from v${nextVertexNum}`);
-
-                let addedPointsCount = 0;
-                uniqueTempPoints.forEach(pointObj => {
-                    // 3. Kiểm tra trùng lặp với các vertex hiện có trong shape
-                    let isDuplicateWithExisting = false;
-                    for (const vertexKey in currentEditingShapeInModal.v) {
-                        const existingVertexArray = currentEditingShapeInModal.v[vertexKey]; // Dạng [x, y, z]
-                        if (Math.abs(existingVertexArray[0] - pointObj.x) < COORD_EPSILON &&
-                            Math.abs(existingVertexArray[1] - pointObj.y) < COORD_EPSILON &&
-                            Math.abs(existingVertexArray[2] - pointObj.z) < COORD_EPSILON) {
-                            isDuplicateWithExisting = true;
-                            console.log(`[SaveModal] Point (${pointObj.x.toFixed(2)}, ${pointObj.y.toFixed(2)}, ${pointObj.z.toFixed(2)}) is a duplicate of existing vertex ${vertexKey}. Skipping.`);
-                            break;
-                        }
-                    }
-
-                    if (!isDuplicateWithExisting) {
-                        const newVertexId = 'v' + nextVertexNum; // Định dạng ID là "vX"
-                        currentEditingShapeInModal.v[newVertexId] = [pointObj.x, pointObj.y, pointObj.z];
-                        console.log(`[SaveModal] Added vertex ${newVertexId}: [${pointObj.x.toFixed(2)}, ${pointObj.y.toFixed(2)}, ${pointObj.z.toFixed(2)}]`);
-                        nextVertexNum++; // Tăng số hiệu cho ID tiếp theo
-                        addedPointsCount++;
-                    }
-                });
-
-                if (addedPointsCount > 0) {
-                    console.log('[SaveModal] Vertices object after adding new points:', JSON.stringify(currentEditingShapeInModal.v));
-                    updateShapeInList(currentEditingShapeInModal); // Cập nhật trong danh sách shapesData
-                    renderShapesList(); // Vẽ lại danh sách shape UI
-                    selectShape(currentEditingShapeInModal._internalId); // Chọn lại shape vừa sửa
-                    renderSelectedShapeEditor(); // Cập nhật editor panel
-                    update3DView(); // Cập nhật view 3D
-
-                    showToast(`Đã thêm ${addedPointsCount} điểm mới vào shape '${currentEditingShapeInModal.n || currentEditingShapeInModal.name}'.`);
-                } else {
-                    showToast('Không có điểm mới nào được thêm (tất cả đều trùng với các điểm đã có hoặc đã tồn tại trong danh sách tạm thời).', 'info');
-                }
-
-            } catch (error) {
-                console.error('[SaveModal] Error during save operation:', error);
-                showToast('Lỗi: Không thể lưu các thay đổi. Vui lòng kiểm tra Console.', 'error');
-            } finally {
-                closeShapeEditorModal(); // Đảm bảo modal luôn đóng và reset trạng thái
-            }
+    console.log('[SaveModal] Attempting to save changes...');
+    try {
+        if (!currentEditingShapeInModal) {
+            console.log('[SaveModal] No shape currently being edited.');
+            showToast('Không có shape nào đang được chỉnh sửa.', 'info');
+            return; 
         }
+        if (!temporaryNewPoints || temporaryNewPoints.length === 0) {
+            console.log('[SaveModal] No new temporary points to save.');
+            showToast('Không có điểm tạm thời nào để lưu.', 'info');
+            return;
+        }
+
+        // 1. Lọc các điểm duy nhất từ temporaryNewPoints
+        const uniqueTempPoints = getUniquePoints(temporaryNewPoints, COORD_EPSILON);
+        if (uniqueTempPoints.length === 0) {
+            console.log('[SaveModal] All temporary points were duplicates of each other or list was empty after filtering.');
+            showToast('Không có điểm mới hợp lệ nào để thêm (có thể tất cả đều trùng lặp).', 'info');
+            return;
+        }
+
+        // Đảm bảo currentEditingShapeInModal.v là một đối tượng
+        if (typeof currentEditingShapeInModal.v !== 'object' || currentEditingShapeInModal.v === null) {
+            currentEditingShapeInModal.v = {};
+        }
+
+        // 2. Xác định ID số tiếp theo cho vertex (ví dụ: 0, 1, 2, ...)
+        let nextVertexNum = 0; // Bắt đầu từ 0 nếu không có key số nào tồn tại
+        const existingVertexKeys = Object.keys(currentEditingShapeInModal.v);
+        
+        if (existingVertexKeys.length > 0) {
+            const numericStringKeys = existingVertexKeys.filter(key => /^\d+$/.test(key)); // Lọc các key là chuỗi số
+            
+            if (numericStringKeys.length > 0) {
+                const numericKeysAsNumbers = numericStringKeys.map(key => parseInt(key, 10));
+                nextVertexNum = Math.max(...numericKeysAsNumbers) + 1;
+            }
+            // Nếu không có key dạng số nào (ví dụ: chỉ có "v0", "v1"), nextVertexNum sẽ vẫn là 0.
+        }
+        console.log(`[SaveModal] Starting new numeric vertex ID from ${nextVertexNum}`);
+
+        let addedPointsCount = 0;
+        uniqueTempPoints.forEach(pointObj => {
+            // 3. Kiểm tra trùng lặp với các vertex hiện có trong shape
+            let isDuplicateWithExisting = false;
+            for (const vertexKey in currentEditingShapeInModal.v) {
+                const existingVertexArray = currentEditingShapeInModal.v[vertexKey]; // Dạng [x, y, z]
+                if (Math.abs(existingVertexArray[0] - pointObj.x) < COORD_EPSILON &&
+                    Math.abs(existingVertexArray[1] - pointObj.y) < COORD_EPSILON &&
+                    Math.abs(existingVertexArray[2] - pointObj.z) < COORD_EPSILON) {
+                    isDuplicateWithExisting = true;
+                    console.log(`[SaveModal] Point (${pointObj.x.toFixed(2)}, ${pointObj.y.toFixed(2)}, ${pointObj.z.toFixed(2)}) is a duplicate of existing vertex ${vertexKey}. Skipping.`);
+                    break;
+                }
+            }
+
+            if (!isDuplicateWithExisting) {
+                const newVertexId = String(nextVertexNum); // Định dạng ID là "0", "1", ...
+                currentEditingShapeInModal.v[newVertexId] = [pointObj.x, pointObj.y, pointObj.z];
+                console.log(`[SaveModal] Added vertex ${newVertexId}: [${pointObj.x.toFixed(2)}, ${pointObj.y.toFixed(2)}, ${pointObj.z.toFixed(2)}]`);
+                nextVertexNum++; // Tăng số hiệu cho ID tiếp theo
+                addedPointsCount++;
+            }
+        });
+
+        if (addedPointsCount > 0) {
+            console.log('[SaveModal] Vertices object after adding new points:', JSON.stringify(currentEditingShapeInModal.v));
+            updateShapeInList(currentEditingShapeInModal); // Cập nhật trong danh sách shapesData
+            renderShapesList(); // Vẽ lại danh sách shape UI
+            selectShape(currentEditingShapeInModal._internalId); // Chọn lại shape vừa sửa
+            renderSelectedShapeEditor(); // Cập nhật editor panel
+            update3DView(); // Cập nhật view 3D
+
+            showToast(`Đã thêm ${addedPointsCount} điểm mới vào shape '${currentEditingShapeInModal.n || currentEditingShapeInModal.name}'.`);
+        } else {
+            showToast('Không có điểm mới nào được thêm (tất cả đều trùng với các điểm đã có hoặc đã tồn tại trong danh sách tạm thời).', 'info');
+        }
+
+    } catch (error) {
+        console.error('[SaveModal] Error during save operation:', error);
+        showToast('Lỗi: Không thể lưu các thay đổi. Vui lòng kiểm tra Console.', 'error');
+    } finally {
+        closeShapeEditorModal(); // Đảm bảo modal luôn đóng và reset trạng thái
+    }
+}
 
         // Cập nhật nút đóng trên HTML của modal để gọi hàm này
         // Ví dụ: onclick="closeShapeEditorModal()"
@@ -2718,7 +2717,7 @@ function drawModalCanvas() {
                     if (textY - textHeight < 5) textY = textHeight + 5;
                 }
 
-                                console.log(`[CrosshairDebug] World Coords: (${worldDspX?.toFixed(2)}, ${worldDspY?.toFixed(2)}, ${worldDspZ?.toFixed(2)})`);
+                console.log(`[CrosshairDebug] World Coords: (${worldDspX?.toFixed(2)}, ${worldDspY?.toFixed(2)}, ${worldDspZ?.toFixed(2)})`);
                 console.log(`[CrosshairDebug] coordText: ${coordText}`);
                 console.log(`[CrosshairDebug] Calculated text position before drawing: X=${textX}, Y=${textY}`);
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'; 
