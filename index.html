@@ -532,6 +532,7 @@
         const HIGHLIGHTED_LINE_COLOR = 0x007bff; // Changed to Blue
         const NORMAL_FACE_COLOR = 0xcccccc;
         const HIGHLIGHTED_FACE_COLOR = 0xffd700; // Gold
+        const CUSTOM_MATERIAL_FACE_COLOR = 0x28a745; // Green to indicate material is set
         const NORMAL_LABEL_BG_COLOR = { r: 50, g: 50, b: 50, a: 0.7 };
         const HIGHLIGHTED_LABEL_BG_COLOR = { r: 255, g: 165, b: 0, a: 0.9 }; // Orange background for labels
 
@@ -755,6 +756,7 @@
 
             shapesData.forEach(shape => {
                 const isSelected = shape._internalId === selectedShapeId;
+                const hasBeenManuallyEdited = !!shape.hasBeenManuallyEdited;
 
                 const shapeSpecificGroup = new THREE.Group(); // Group riêng cho mỗi shape
                 shapeSpecificGroup.userData.shapeId = shape._internalId; // Store shapeId for picking
@@ -764,8 +766,16 @@
                     color: isSelected ? HIGHLIGHTED_LINE_COLOR : NORMAL_LINE_COLOR,
                     depthTest: false, // Để line không bị ẩn bởi face nếu trùng
                 });
+
+                let faceColor = NORMAL_FACE_COLOR;
+                if (isSelected) {
+                    faceColor = HIGHLIGHTED_FACE_COLOR;
+                } else if (hasBeenManuallyEdited) {
+                    faceColor = CUSTOM_MATERIAL_FACE_COLOR;
+                }
+
                 const currentFaceMaterial = new THREE.MeshStandardMaterial({
-                    color: isSelected ? HIGHLIGHTED_FACE_COLOR : NORMAL_FACE_COLOR,
+                    color: faceColor,
                     side: THREE.FrontSide,
                     metalness: 0.1,
                     roughness: 0.75,
@@ -1098,7 +1108,8 @@
                 v: {},
                 pivot: [0, 0, 0],
                 deformTypes: defaultDeformTypes,
-                stdMaterial: defaultStdMaterial
+                stdMaterial: defaultStdMaterial,
+                hasBeenManuallyEdited: false
             };
             shapesData.push(newShape);
             selectShape(newShapeInternalId);
@@ -1489,7 +1500,8 @@
 
         stdMaterialInput.onchange = (e) => {
             if (selectedShape) {
-                selectedShape.stdMaterial = e.target.value;
+                selectedShape.stdMaterial = e.target.value.trim();
+                selectedShape.hasBeenManuallyEdited = true; // Đánh dấu là đã được sửa thủ công
                 renderJsonOutput();
             }
         };
@@ -1523,6 +1535,8 @@
                 if (defaultDeformStretch2Checkbox.checked) defaultDeformTypes.push('Stretch2');
                 if (defaultDeformClippingCheckbox.checked) defaultDeformTypes.push('Clipping');
 
+                const finalStdMaterial = s.stdMaterial || defaultStdMaterialInput.value.trim();
+
                 return {
                     _internalId: internalId,
                     v: s.v || {},
@@ -1530,7 +1544,8 @@
                     lines: s.lines || [],
                     pivot: s.pivot && Array.isArray(s.pivot) && s.pivot.length === 3 ? s.pivot : [0, 0, 0],
                     deformTypes: s.deformTypes && Array.isArray(s.deformTypes) ? s.deformTypes : defaultDeformTypes,
-                    stdMaterial: s.stdMaterial || defaultStdMaterialInput.value.trim()
+                    stdMaterial: finalStdMaterial,
+                    hasBeenManuallyEdited: false
                 };
             });
 
@@ -1627,7 +1642,8 @@
                 lines: newLines,
                 pivot: newPivot,
                 deformTypes: newDeformTypes,
-                stdMaterial: originalShape.stdMaterial
+                stdMaterial: originalShape.stdMaterial,
+                hasBeenManuallyEdited: originalShape.hasBeenManuallyEdited
             };
 
             shapesData.push(copiedShape);
@@ -1651,6 +1667,7 @@
             shapesData.forEach(shape => {
                 shape.stdMaterial = defaultStdMaterial;
                 shape.deformTypes = [...defaultDeformTypes];
+                delete shape.hasBeenManuallyEdited; // Reset trạng thái "sửa thủ công"
             });
 
             if (selectedShape) {
