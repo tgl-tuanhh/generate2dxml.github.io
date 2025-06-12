@@ -1754,6 +1754,13 @@
         function onDocumentMouseDown(event) {
             event.preventDefault();
 
+            // Force blur on any active input element in the editor to trigger 'onchange'.
+            // This ensures data is saved before the shape selection changes.
+            const activeElement = document.activeElement;
+            if (activeElement && activeElement.tagName === 'INPUT' && shapeEditorContainer.contains(activeElement)) {
+                activeElement.blur();
+            }
+
             const rect = renderer.domElement.getBoundingClientRect();
             mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
