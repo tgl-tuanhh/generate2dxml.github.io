@@ -472,6 +472,7 @@
         // State của ứng dụng
         let shapesData = [];
         let selectedShapeId = null; // Sẽ lưu _internalId của shape được chọn
+        let selectedShape = null; // Sẽ lưu object shape được chọn để truy cập nhanh
         let currentJsonString = ''; // Lưu trữ chuỗi JSON hiện tại (chủ yếu cho Line Geometry và 3D view)
         let currentObjectName = 'OBJECT-NAME'; // Lưu trữ Object Name, khởi tạo với giá trị mặc định
 
@@ -966,7 +967,7 @@
         }
 
         function renderSelectedShapeEditor() {
-            if (!selectedShapeId) {
+            if (!selectedShape) { // Tối ưu: Sử dụng trực tiếp selectedShape
                 shapeEditorContainer.classList.add('hidden');
                 noShapeSelectedMsg.classList.remove('hidden');
                 if (currentDeformTypesText) currentDeformTypesText.textContent = 'None';
@@ -976,30 +977,25 @@
             shapeEditorContainer.classList.remove('hidden');
             noShapeSelectedMsg.classList.add('hidden');
 
-            const shape = shapesData.find(s => s._internalId === selectedShapeId);
-            if (!shape) return; // Should not happen
+            const shape = selectedShape; // Tối ưu: Sử dụng trực tiếp
 
-            const shapeIndex = shapesData.findIndex(s => s._internalId === selectedShapeId);
-            if (shapeIndex === -1) return; // Should not happen
+            const shapeIndex = shapesData.findIndex(s => s._internalId === shape._internalId);
+            if (shapeIndex === -1) return;
 
             const lineIdentifiers = generateShapeIdentifiers(shapeIndex, "Line");
             const stdIdentifiers = generateShapeIdentifiers(shapeIndex, "Std");
 
             generatedShapeNameLine.textContent = lineIdentifiers.name;
             generatedShapeNameStd.textContent = stdIdentifiers.name;
-            // UUID hiển thị có thể lấy theo Line mode hoặc làm rõ hơn
-            // generatedShapeUuid.textContent = `${lineIdentifiers.uuid} (Line Mode) / ${stdIdentifiers.uuid} (Std Mode)`; // ĐÃ XÓA
 
             stdMaterialInput.value = shape.stdMaterial || '';
 
-            // Xử lý Deform Types Checkboxes
             shape.deformTypes = shape.deformTypes || [];
             deformStretch2Checkbox.checked = shape.deformTypes.includes('Stretch2');
             deformClippingCheckbox.checked = shape.deformTypes.includes('Clipping');
-            updateCurrentDeformTypesText(shape.deformTypes); // Cập nhật text hiển thị
+            updateCurrentDeformTypesText(shape.deformTypes);
 
-            // Hiển thị và xử lý pivot
-            shape.pivot = shape.pivot || [0, 0, 0]; // Đảm bảo pivot tồn tại
+            shape.pivot = shape.pivot || [0, 0, 0];
             pivotXInput.value = shape.pivot[0];
             pivotYInput.value = shape.pivot[1];
             pivotZInput.value = shape.pivot[2];
@@ -1007,8 +1003,9 @@
             renderVerticesList(shape);
             renderFacesList(shape);
             renderLinesList(shape);
-            renderJsonOutput();
+            // Không cần renderJsonOutput() ở đây vì nó sẽ được gọi trong selectShape
         }
+
 
         function renderVerticesList(shape) {
             verticesListContainer.innerHTML = '';
@@ -1021,13 +1018,12 @@
                 const idLabel = document.createElement('span');
                 idLabel.textContent = `ID(${key}):`;
 
-                // Gộp thành 1 input
                 const coordsInput = document.createElement('input');
                 coordsInput.type = 'text';
-                coordsInput.value = coords.join(','); // Hiển thị dạng X,Y,Z
+                coordsInput.value = coords.join(',');
                 coordsInput.dataset.vertexKey = key;
-                coordsInput.style.flexGrow = 1; // Cho input chiếm nhiều không gian hơn
-                coordsInput.onchange = handleVertexCoordsChange; // Hàm xử lý mới
+                coordsInput.style.flexGrow = 1;
+                coordsInput.onchange = handleVertexCoordsChange;
 
                 const copyBtn = document.createElement('button');
                 copyBtn.innerHTML = '📋';
@@ -1089,81 +1085,88 @@
 
         // --- Event Handlers & Logic ---
         addShapeBtn.onclick = () => {
-            const newShapeInternalId = Date.now() + Math.random(); // ID nội bộ duy nhất, không dùng cho name/uuid nữa
+            const newShapeInternalId = Date.now() + Math.random();
             const defaultStdMaterial = defaultStdMaterialInput.value.trim();
-            const defaultDeformTypes = []; // Khởi tạo mảng rỗng
+            const defaultDeformTypes = [];
             if (defaultDeformStretch2Checkbox.checked) defaultDeformTypes.push('Stretch2');
             if (defaultDeformClippingCheckbox.checked) defaultDeformTypes.push('Clipping');
 
             const newShape = {
                 _internalId: newShapeInternalId,
-                // name và uuid sẽ được tạo động, không cần lưu trữ cố định trong shape object nữa
                 faces: {},
                 lines: [],
                 v: {},
                 pivot: [0, 0, 0],
-                deformTypes: defaultDeformTypes, // Sử dụng giá trị default
-                stdMaterial: defaultStdMaterial  // Sử dụng giá trị default
+                deformTypes: defaultDeformTypes,
+                stdMaterial: defaultStdMaterial
             };
             shapesData.push(newShape);
-            // Không cần gán selectedShapeId ngay, vì selectShape sẽ làm điều đó thông qua renderShapesList
-            renderShapesList(); // Cập nhật danh sách trước
-            selectShape(newShapeInternalId); // Tự động chọn shape mới
+            selectShape(newShapeInternalId);
         };
 
         function selectShape(shapeIdToSelect) {
             selectedShapeId = shapeIdToSelect;
+            if (shapeIdToSelect) {
+                selectedShape = shapesData.find(s => s._internalId === shapeIdToSelect);
+            } else {
+                selectedShape = null;
+            }
             renderShapesList();
             renderSelectedShapeEditor();
-            renderJsonOutput(); // Điều này sẽ gọi update3DView và áp dụng highlight
+            renderJsonOutput();
         }
 
         function deleteShape(shapeIdToDelete) {
-            shapesData = shapesData.filter(s => s._internalId !== shapeIdToDelete);
+            const shapeIndex = shapesData.findIndex(s => s._internalId === shapeIdToDelete);
+            if (shapeIndex === -1) return;
+
+            shapesData.splice(shapeIndex, 1);
+
             if (selectedShapeId === shapeIdToDelete) {
                 selectedShapeId = null;
-                if (currentDeformTypesText) currentDeformTypesText.textContent = 'None';
-                // Xóa luôn text tên/uuid đang hiển thị trong editor
-                generatedShapeNameLine.textContent = '';
-                generatedShapeNameStd.textContent = '';
-                // generatedShapeUuid.textContent = ''; // ĐÃ XÓA
+                selectedShape = null;
+                if (shapesData.length > 0) {
+                    selectShape(shapesData[0]._internalId);
+                } else {
+                    renderShapesList();
+                    renderSelectedShapeEditor();
+                    renderJsonOutput();
+                }
+            } else {
+                renderShapesList();
+                renderJsonOutput();
             }
-            renderShapesList();
-            renderSelectedShapeEditor(); // Cập nhật editor (có thể ẩn đi)
-            renderJsonOutput();
         }
 
         function generateShapeIdentifiers(shapeIndex, mode) {
             const baseName = currentObjectName || "DEFAULT_OBJECT";
             const suffix = mode === "Line" ? "L" : "G";
             const name = `${baseName}-${suffix}_${shapeIndex + 1}`;
-            return { name: name, uuid: name }; // UUID giống hệt name
+            return { name: name, uuid: name };
         }
 
         objectNameInput.onchange = (e) => {
             currentObjectName = e.target.value.trim();
             renderShapesList();
-            renderSelectedShapeEditor(); // Cập nhật tên hiển thị nếu có shape đang chọn
-            renderJsonOutput(); // Cập nhật JSON và 3D view
+            renderSelectedShapeEditor();
+            renderJsonOutput();
         };
 
         addVertexBtn.onclick = () => {
-            if (!selectedShapeId) return;
-            const shape = shapesData.find(s => s._internalId === selectedShapeId);
-            if (!shape) return;
+            if (!selectedShape) return;
+            const shape = selectedShape;
 
             const existingKeys = Object.keys(shape.v).map(k => parseInt(k)).filter(k => !isNaN(k));
             const newKey = existingKeys.length > 0 ? Math.max(...existingKeys) + 1 : 0;
 
-            shape.v[newKey.toString()] = [0, 0, 0]; // Default coords
+            shape.v[newKey.toString()] = [0, 0, 0];
             renderVerticesList(shape);
             renderJsonOutput();
         };
 
         function handleVertexCoordsChange(event) {
-            if (!selectedShapeId) return;
-            const shape = shapesData.find(s => s._internalId === selectedShapeId);
-            if (!shape) return;
+            if (!selectedShape) return;
+            const shape = selectedShape;
 
             const vertexKey = event.target.dataset.vertexKey;
             const newCoordsStr = event.target.value.trim();
@@ -1179,9 +1182,9 @@
         }
 
         function copyVertex(vertexKeyToCopy) {
-            if (!selectedShapeId) return;
-            const shape = shapesData.find(s => s._internalId === selectedShapeId);
-            if (!shape || !shape.v[vertexKeyToCopy]) return;
+            if (!selectedShape) return;
+            const shape = selectedShape;
+            if (!shape.v[vertexKeyToCopy]) return;
 
             const coordsToCopy = [...shape.v[vertexKeyToCopy]];
 
@@ -1194,36 +1197,30 @@
         }
 
         function deleteVertex(vertexKeyToDelete) {
-            if (!selectedShapeId) return;
-            const shape = shapesData.find(s => s._internalId === selectedShapeId);
-            if (!shape || !shape.v[vertexKeyToDelete]) return;
+            if (!selectedShape) return;
+            const shape = selectedShape;
+            if (!shape.v[vertexKeyToDelete]) return;
 
-            // Bỏ confirm, thực hiện xóa trực tiếp
-            // if (confirm(`Bạn có chắc muốn xóa Vertex ID(${vertexKeyToDelete})? Điều này có thể ảnh hưởng đến Faces và Lines.`)) {
             delete shape.v[vertexKeyToDelete];
             renderVerticesList(shape);
             renderJsonOutput();
             showToast(`Đã xóa Vertex ID(${vertexKeyToDelete}). Lưu ý: Faces và Lines tham chiếu đến vertex này có thể không còn hợp lệ.`, 'warning');
-            // }
         }
 
         addFaceBtn.onclick = () => {
-            if (!selectedShapeId) return;
-            const shape = shapesData.find(s => s._internalId === selectedShapeId);
-            if (!shape) return;
+            if (!selectedShape) return;
+            const shape = selectedShape;
 
             const verticesStr = faceVerticesInput.value.trim();
-            const existingFaceKeys = Object.keys(shape.faces).map(k => parseInt(k)).filter(k => !isNaN(k));
-            let newFaceKey = 0;
-            if (existingFaceKeys.length > 0) {
-                newFaceKey = Math.max(...existingFaceKeys) + 1;
-            }
-            const faceKey = newFaceKey.toString();
-
             if (!verticesStr) {
                 showToast("Danh sách vertices cho face không được để trống.", 'error');
                 return;
             }
+
+            const existingFaceKeys = Object.keys(shape.faces).map(k => parseInt(k)).filter(k => !isNaN(k));
+            const newFaceKey = existingFaceKeys.length > 0 ? Math.max(...existingFaceKeys) + 1 : 0;
+            const faceKey = newFaceKey.toString();
+
             const verticesIndices = verticesStr.split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v));
             if (verticesIndices.length < 3) {
                 showToast("Một face cần ít nhất 3 vertices.", 'error');
@@ -1237,6 +1234,7 @@
             }
             shape.faces[faceKey] = { vertices: verticesIndices };
             renderFacesList(shape);
+
             if (verticesIndices.length >= 2) {
                 for (let i = 0; i < verticesIndices.length; i++) {
                     const vA = verticesIndices[i];
@@ -1257,18 +1255,17 @@
         };
 
         function deleteFace(faceKeyToDelete) {
-            if (!selectedShapeId) return;
-            const shape = shapesData.find(s => s._internalId === selectedShapeId);
-            if (!shape || !shape.faces[faceKeyToDelete]) return;
+            if (!selectedShape) return;
+            const shape = selectedShape;
+            if (!shape.faces[faceKeyToDelete]) return;
             delete shape.faces[faceKeyToDelete];
             renderFacesList(shape);
             renderJsonOutput();
         }
 
         addLineBtn.onclick = () => {
-            if (!selectedShapeId) return;
-            const shape = shapesData.find(s => s._internalId === selectedShapeId);
-            if (!shape) return;
+            if (!selectedShape) return;
+            const shape = selectedShape;
             const verticesStr = lineVerticesInput.value.trim();
             if (!verticesStr) {
                 showToast("Vui lòng nhập ID của hai đỉnh, cách nhau bởi dấu phẩy.", 'error');
@@ -1311,9 +1308,9 @@
         };
 
         function deleteLine(lineIndexToDelete) {
-            if (!selectedShapeId) return;
-            const shape = shapesData.find(s => s._internalId === selectedShapeId);
-            if (!shape || !shape.lines[lineIndexToDelete]) return;
+            if (!selectedShape) return;
+            const shape = selectedShape;
+            if (!shape.lines[lineIndexToDelete]) return;
             shape.lines.splice(lineIndexToDelete, 1);
             renderLinesList(shape);
             renderJsonOutput();
@@ -1322,7 +1319,7 @@
         // --- Transformation Functions ---
         function calculateShapeCentroid(shape) {
             if (!shape || !shape.v || Object.keys(shape.v).length === 0) {
-                return new THREE.Vector3(0, 0, 0); // Default to origin if no vertices
+                return new THREE.Vector3(0, 0, 0);
             }
             const centroid = new THREE.Vector3(0, 0, 0);
             const vertexKeys = Object.keys(shape.v);
@@ -1334,11 +1331,10 @@
         }
 
         applyTranslateBtn.onclick = () => {
-            if (!selectedShapeId) return;
-            const shape = shapesData.find(s => s._internalId === selectedShapeId);
-            if (!shape || !shape.v) return;
+            if (!selectedShape) return;
+            const shape = selectedShape;
+            if (!shape.v) return;
 
-            // Đảm bảo shape.pivot tồn tại và là một mảng
             shape.pivot = shape.pivot && Array.isArray(shape.pivot) && shape.pivot.length === 3 ? shape.pivot : [0, 0, 0];
 
             const deltaX = parseFloat(translateXInput.value) || 0;
@@ -1349,29 +1345,24 @@
             shape.pivot[1] = parseFloat((shape.pivot[1] + deltaY).toFixed(1));
             shape.pivot[2] = parseFloat((shape.pivot[2] + deltaZ).toFixed(1));
 
-            // Không cần cập nhật shape.v nữa vì chúng là local
-            // renderVerticesList(shape); // Không cần thiết nếu chỉ pivot thay đổi
-            renderSelectedShapeEditor(); // Cập nhật giá trị pivot trên UI
-            renderJsonOutput(); // Cập nhật JSON và 3D view
+            renderSelectedShapeEditor();
+            renderJsonOutput();
         };
 
         applyRotateBtn.onclick = () => {
-            if (!selectedShapeId) return;
-            const shape = shapesData.find(s => s._internalId === selectedShapeId);
-            if (!shape || !shape.v) return;
+            if (!selectedShape) return;
+            const shape = selectedShape;
+            if (!shape.v) return;
 
             const angleX = THREE.MathUtils.degToRad(parseFloat(rotateXInput.value) || 0);
             const angleY = THREE.MathUtils.degToRad(parseFloat(rotateYInput.value) || 0);
             const angleZ = THREE.MathUtils.degToRad(parseFloat(rotateZInput.value) || 0);
 
-            // const centroid = calculateShapeCentroid(shape); // Không cần centroid nữa vì xoay local vertices
-            const euler = new THREE.Euler(angleX, angleY, angleZ, 'XYZ'); // Thứ tự xoay XYZ
+            const euler = new THREE.Euler(angleX, angleY, angleZ, 'XYZ');
 
             Object.keys(shape.v).forEach(key => {
-                const vertex = new THREE.Vector3(...shape.v[key]); // Đây là local vertex
-                // vertex.sub(centroid); // Không cần trừ centroid
-                vertex.applyEuler(euler); // Xoay quanh gốc (0,0,0) của local space
-                // vertex.add(centroid); // Không cần cộng lại centroid
+                const vertex = new THREE.Vector3(...shape.v[key]);
+                vertex.applyEuler(euler);
                 shape.v[key] = [
                     parseFloat(vertex.x.toFixed(1)),
                     parseFloat(vertex.y.toFixed(1)),
@@ -1383,19 +1374,15 @@
         };
 
         function applyFlip(axis) {
-            if (!selectedShapeId) return;
-            const shape = shapesData.find(s => s._internalId === selectedShapeId);
-            if (!shape || !shape.v) return;
-
-            // const centroid = calculateShapeCentroid(shape); // Không cần centroid nữa
+            if (!selectedShape) return;
+            const shape = selectedShape;
+            if (!shape.v) return;
 
             Object.keys(shape.v).forEach(key => {
-                const vertex = new THREE.Vector3(...shape.v[key]); // Local vertex
-                // vertex.sub(centroid); // Không cần
+                const vertex = new THREE.Vector3(...shape.v[key]);
                 if (axis === 'x') vertex.x *= -1;
                 if (axis === 'y') vertex.y *= -1;
                 if (axis === 'z') vertex.z *= -1;
-                // vertex.add(centroid); // Không cần
                 shape.v[key] = [
                     parseFloat(vertex.x.toFixed(1)),
                     parseFloat(vertex.y.toFixed(1)),
@@ -1415,40 +1402,35 @@
         pivotZInput.onchange = handlePivotChange;
 
         function handlePivotChange() {
-            if (!selectedShapeId) return;
-            const shape = shapesData.find(s => s._internalId === selectedShapeId);
-            if (!shape) return;
+            if (!selectedShape) return;
+            const shape = selectedShape;
 
             const newPivotX = parseFloat(pivotXInput.value) || 0;
             const newPivotY = parseFloat(pivotYInput.value) || 0;
             const newPivotZ = parseFloat(pivotZInput.value) || 0;
 
             shape.pivot = [newPivotX, newPivotY, newPivotZ];
-            renderJsonOutput(); // Cập nhật 3D view và JSON
+            renderJsonOutput();
         }
 
         deformStretch2Checkbox.onchange = handleDeformTypeChange;
         deformClippingCheckbox.onchange = handleDeformTypeChange;
 
         function handleDeformTypeChange(event) {
-            if (!selectedShapeId) return;
-            const shape = shapesData.find(s => s._internalId === selectedShapeId);
-            if (!shape) return;
+            if (!selectedShape) return;
+            const shape = selectedShape;
 
             const type = event.target.id === 'deformStretch2Checkbox' ? 'Stretch2' : 'Clipping';
             shape.deformTypes = shape.deformTypes || [];
 
             if (event.target.checked) {
-                // Thêm nếu chưa có, giữ thứ tự nếu đã có từ trước (do uncheck rồi check lại)
                 if (!shape.deformTypes.includes(type)) {
                     shape.deformTypes.push(type);
                 }
             } else {
-                // Xóa khỏi mảng
                 shape.deformTypes = shape.deformTypes.filter(dt => dt !== type);
             }
-            updateCurrentDeformTypesText(shape.deformTypes); // Cập nhật text hiển thị
-            // Không cần gọi renderJsonOutput() ở đây vì JSON cho LineMesh được tạo riêng khi bấm nút
+            updateCurrentDeformTypesText(shape.deformTypes);
         }
 
         function updateCurrentDeformTypesText(deformTypesArray) {
@@ -1460,17 +1442,15 @@
         function generateLineMeshJsonString() {
             const children = shapesData.map((shape, index) => {
                 const identifiers = generateShapeIdentifiers(index, "Line");
-                // Đảm bảo shape.name không rỗng, nếu rỗng dùng một giá trị tạm
-                // const geometryName = (shape.name && shape.name.trim() !== '') ? shape.name.trim() : `Shape_${shape._internalId}`; // Cũ
                 return {
                     "@type": ".Mesh2",
-                    geometry: identifiers.name, // Sử dụng tên được tạo động
+                    geometry: identifiers.name,
                     deformTypes: shape.deformTypes && Array.isArray(shape.deformTypes) ? shape.deformTypes : ['Stretch2'],
-                    material: "MF", // Giữ nguyên như logic cũ của LineMesh
-                    edgeMaterial: "ML0" // Giữ nguyên
+                    material: "MF",
+                    edgeMaterial: "ML0"
                 };
             });
-            return JSON.stringify({ children: children }); // Bỏ null, 2 để minimize
+            return JSON.stringify({ children: children });
         }
 
         copyLineMeshBtn.onclick = () => {
@@ -1486,16 +1466,15 @@
         function generateStdMeshJsonString() {
             const children = shapesData.map((shape, index) => {
                 const identifiers = generateShapeIdentifiers(index, "Std");
-                // const geometryName = (shape.name && shape.name.trim() !== '') ? shape.name.trim() : `Shape_${shape._internalId}`; // Cũ
                 return {
                     "@type": ".Mesh2",
-                    geometry: identifiers.name, // Sử dụng tên được tạo động
+                    geometry: identifiers.name,
                     deformTypes: shape.deformTypes && Array.isArray(shape.deformTypes) ? shape.deformTypes : ['Stretch2'],
                     material: shape.stdMaterial || "",
                     matTag: "mat1"
                 };
             });
-            return JSON.stringify({ children: children }); // Bỏ null, 2 để minimize
+            return JSON.stringify({ children: children });
         }
 
         copyStdMeshBtn.onclick = () => {
@@ -1509,14 +1488,64 @@
         };
 
         stdMaterialInput.onchange = (e) => {
-            if (selectedShapeId) {
-                const shape = shapesData.find(s => s._internalId === selectedShapeId);
-                if (shape) {
-                    shape.stdMaterial = e.target.value;
-                    // Không cần renderJsonOutput() vì stdMaterial không ảnh hưởng trực tiếp đến 3D view hoặc JSON của các nút copy khác
-                }
+            if (selectedShape) {
+                selectedShape.stdMaterial = e.target.value;
+                renderJsonOutput();
             }
         };
+
+        function processLoadedJson(jsonData) {
+            if (!jsonData || !Array.isArray(jsonData.shapes)) {
+                showToast("Lỗi: Dữ liệu JSON không hợp lệ hoặc không có thuộc tính 'shapes' dạng mảng.", 'error');
+                return false;
+            }
+
+            const isValidShapeStructure = jsonData.shapes.every(shape =>
+                typeof shape.v === 'object' && shape.v !== null &&
+                typeof shape.faces === 'object' && shape.faces !== null &&
+                Array.isArray(shape.lines)
+            );
+
+            if (!isValidShapeStructure) {
+                showToast("Lỗi: Một hoặc nhiều shape trong JSON không có cấu trúc v, faces, hoặc lines hợp lệ.", 'error');
+                return false;
+            }
+
+            if (!currentObjectName || currentObjectName.trim() === "") {
+                showToast("Vui lòng nhập Object Name trước khi import JSON.", 'warning');
+                objectNameInput.focus();
+                return false;
+            }
+
+            shapesData = jsonData.shapes.map((s, index) => {
+                const internalId = Date.now() + index + Math.random();
+                const defaultDeformTypes = [];
+                if (defaultDeformStretch2Checkbox.checked) defaultDeformTypes.push('Stretch2');
+                if (defaultDeformClippingCheckbox.checked) defaultDeformTypes.push('Clipping');
+
+                return {
+                    _internalId: internalId,
+                    v: s.v || {},
+                    faces: s.faces || {},
+                    lines: s.lines || [],
+                    pivot: s.pivot && Array.isArray(s.pivot) && s.pivot.length === 3 ? s.pivot : [0, 0, 0],
+                    deformTypes: s.deformTypes && Array.isArray(s.deformTypes) ? s.deformTypes : defaultDeformTypes,
+                    stdMaterial: s.stdMaterial || defaultStdMaterialInput.value.trim()
+                };
+            });
+
+            selectedShapeId = null;
+            selectedShape = null;
+
+            if (shapesData.length > 0) {
+                selectShape(shapesData[0]._internalId);
+            } else {
+                renderShapesList();
+                renderSelectedShapeEditor();
+                renderJsonOutput();
+            }
+            return true;
+        }
 
         importJsonBtn.onclick = async () => {
             try {
@@ -1525,62 +1554,10 @@
                     showToast("Clipboard rỗng hoặc không chứa dữ liệu text.", 'info');
                     return;
                 }
-
                 const parsedData = JSON.parse(textFromClipboard);
-
-                if (!parsedData || !Array.isArray(parsedData.shapes)) {
-                    showToast("Lỗi: Dữ liệu từ clipboard không phải JSON hợp lệ hoặc không có thuộc tính 'shapes' dạng mảng.", 'error');
-                    return;
+                if (processLoadedJson(parsedData)) {
+                    showToast('Đã import thành công dữ liệu từ Clipboard!', 'success');
                 }
-
-                const isValidShapeStructure = parsedData.shapes.every(shape =>
-                    typeof shape.v === 'object' && shape.v !== null &&
-                    typeof shape.faces === 'object' && shape.faces !== null &&
-                    Array.isArray(shape.lines)
-                );
-
-                if (!isValidShapeStructure) {
-                    showToast("Lỗi: Một hoặc nhiều shape trong JSON từ clipboard không có cấu trúc v, faces, hoặc lines hợp lệ.", 'error');
-                    return;
-                }
-
-                if (!currentObjectName || currentObjectName.trim() === "") {
-                    showToast("Vui lòng nhập Object Name trước khi import JSON.", 'warning');
-                    objectNameInput.focus();
-                    return;
-                }
-
-                shapesData = parsedData.shapes.map((s, index) => {
-                    const internalId = Date.now() + index + Math.random();
-                    return {
-                        _internalId: internalId,
-                        v: s.v || {},
-                        faces: s.faces || {},
-                        lines: s.lines || [],
-                        pivot: s.pivot && Array.isArray(s.pivot) && s.pivot.length === 3 ? s.pivot : [0, 0, 0],
-                        // Nếu s.deformTypes không tồn tại, sẽ lấy từ các checkbox mặc định (giờ đây sẽ là rỗng nếu không check)
-                        deformTypes: s.deformTypes && Array.isArray(s.deformTypes) ? s.deformTypes : (defaultDeformStretch2Checkbox.checked ? ['Stretch2'] : []).concat(defaultDeformClippingCheckbox.checked ? ['Clipping'] : []),
-                        stdMaterial: s.stdMaterial || defaultStdMaterialInput.value.trim()
-                    };
-                });
-
-                selectedShapeId = null;
-                renderShapesList();
-                renderSelectedShapeEditor();
-                renderJsonOutput();
-
-                if (shapesData.length > 0 && !selectedShapeId) {
-                    // Option: select the first shape automatically after import
-                    // selectShape(shapesData[0]._internalId);
-                } else if (selectedShapeId) {
-                    const currentSelectedShape = shapesData.find(s => s._internalId === selectedShapeId);
-                    if (currentSelectedShape) {
-                        updateCurrentDeformTypesText(currentSelectedShape.deformTypes);
-                    }
-                } else {
-                    if (currentDeformTypesText) currentDeformTypesText.textContent = 'None';
-                }
-
             } catch (error) {
                 console.error("Lỗi khi import JSON từ clipboard:", error);
                 if (error.name === 'NotAllowedError') {
@@ -1594,92 +1571,26 @@
         };
 
         uploadJsonBtn.onclick = () => {
-            uploadJsonFile.click(); // Trigger click event của input file ẩn
+            uploadJsonFile.click();
         };
 
-        uploadJsonFile.onchange = async (event) => {
+        uploadJsonFile.onchange = (event) => {
             const file = event.target.files[0];
-            if (!file) {
-                showToast("Không có file nào được chọn.", 'info');
-                return;
-            }
+            if (!file) return;
 
             if (file.type !== "application/json") {
                 showToast("Vui lòng chọn một file .json hợp lệ.", 'error');
-                event.target.value = null; // Reset input file
+                event.target.value = null;
                 return;
             }
 
             const reader = new FileReader();
-            reader.onload = async (e) => {
+            reader.onload = (e) => {
                 try {
-                    const textFromFile = e.target.result;
-                    if (!textFromFile) {
-                        showToast("File rỗng hoặc không thể đọc.", 'error');
-                        event.target.value = null; // Reset input file
-                        return;
+                    const parsedData = JSON.parse(e.target.result);
+                    if (processLoadedJson(parsedData)) {
+                        showToast(`Đã import thành công dữ liệu từ file ${file.name}`, 'success');
                     }
-
-                    const parsedData = JSON.parse(textFromFile);
-
-                    if (!parsedData || !Array.isArray(parsedData.shapes)) {
-                        showToast("Lỗi: Dữ liệu từ file không phải JSON hợp lệ hoặc không có thuộc tính 'shapes' dạng mảng.", 'error');
-                        event.target.value = null; // Reset input file
-                        return;
-                    }
-
-                    const isValidShapeStructure = parsedData.shapes.every(shape =>
-                        typeof shape.v === 'object' && shape.v !== null &&
-                        typeof shape.faces === 'object' && shape.faces !== null &&
-                        Array.isArray(shape.lines)
-                    );
-
-                    if (!isValidShapeStructure) {
-                        showToast("Lỗi: Một hoặc nhiều shape trong JSON từ file không có cấu trúc v, faces, hoặc lines hợp lệ.", 'error');
-                        event.target.value = null; // Reset input file
-                        return;
-                    }
-
-                    if (!currentObjectName || currentObjectName.trim() === "") {
-                        showToast("Vui lòng nhập Object Name trước khi import JSON.", 'warning');
-                        objectNameInput.focus();
-                        event.target.value = null; // Reset input file
-                        return;
-                    }
-
-                    shapesData = parsedData.shapes.map((s, index) => {
-                        const internalId = Date.now() + index + Math.random();
-                        return {
-                            _internalId: internalId,
-                            v: s.v || {},
-                            faces: s.faces || {},
-                            lines: s.lines || [],
-                            pivot: s.pivot && Array.isArray(s.pivot) && s.pivot.length === 3 ? s.pivot : [0, 0, 0],
-                            deformTypes: s.deformTypes && Array.isArray(s.deformTypes) ? s.deformTypes : (defaultDeformStretch2Checkbox.checked ? ['Stretch2'] : []).concat(defaultDeformClippingCheckbox.checked ? ['Clipping'] : []),
-                            stdMaterial: s.stdMaterial || defaultStdMaterialInput.value.trim()
-                        };
-                    });
-
-                    selectedShapeId = null;
-                    renderShapesList();
-                    renderSelectedShapeEditor();
-                    renderJsonOutput();
-                    showToast(`Đã import thành công dữ liệu từ file ${file.name}`, 'success');
-
-
-                    if (shapesData.length > 0 && !selectedShapeId) {
-                        // Option: select the first shape automatically after import
-                        // selectShape(shapesData[0]._internalId);
-                    } else if (selectedShapeId) {
-                        const currentSelectedShape = shapesData.find(s => s._internalId === selectedShapeId);
-                        if (currentSelectedShape) {
-                            updateCurrentDeformTypesText(currentSelectedShape.deformTypes);
-                        }
-                    } else {
-                        if (currentDeformTypesText) currentDeformTypesText.textContent = 'None';
-                    }
-                    event.target.value = null; // Reset input file sau khi xử lý thành công
-
                 } catch (error) {
                     console.error("Lỗi khi import JSON từ file:", error);
                     if (error instanceof SyntaxError) {
@@ -1687,23 +1598,21 @@
                     } else {
                         showToast("Đã xảy ra lỗi khi đọc hoặc parse JSON từ file. Vui lòng kiểm tra console.", 'error');
                     }
-                    event.target.value = null; // Reset input file
+                } finally {
+                    event.target.value = null;
                 }
             };
             reader.onerror = () => {
                 showToast("Lỗi khi đọc file.", 'error');
-                event.target.value = null; // Reset input file
+                event.target.value = null;
             };
             reader.readAsText(file);
         };
 
         function copyShape(shapeIdToCopy) {
-            // Tìm shape gốc để sao chép
             const originalShape = shapesData.find(s => s._internalId === shapeIdToCopy);
             if (!originalShape) return;
 
-            // Tạo một bản sao sâu của shape (trừ _internalId)
-            // Quan trọng: Cần sao chép sâu các object và array bên trong (v, faces, lines, pivot, deformTypes)
             const newShapeInternalId = Date.now() + Math.random();
             const newV = JSON.parse(JSON.stringify(originalShape.v || {}));
             const newFaces = JSON.parse(JSON.stringify(originalShape.faces || {}));
@@ -1716,17 +1625,13 @@
                 v: newV,
                 faces: newFaces,
                 lines: newLines,
-                pivot: newPivot, // Sao chép pivot
-                deformTypes: newDeformTypes, // Sao chép deformTypes
-                stdMaterial: originalShape.stdMaterial // Sao chép stdMaterial
+                pivot: newPivot,
+                deformTypes: newDeformTypes,
+                stdMaterial: originalShape.stdMaterial
             };
 
-            // Thêm shape đã sao chép vào mảng shapesData
             shapesData.push(copiedShape);
-
-            // Cập nhật danh sách shapes và tự động chọn shape mới được sao chép
-            renderShapesList();
-            selectShape(newShapeInternalId); // Chọn shape mới được copy
+            selectShape(newShapeInternalId);
         }
 
         applyDefaultsBtn.onclick = () => {
@@ -1745,18 +1650,18 @@
 
             shapesData.forEach(shape => {
                 shape.stdMaterial = defaultStdMaterial;
-                shape.deformTypes = [...defaultDeformTypes]; // Tạo bản sao để tránh tham chiếu
+                shape.deformTypes = [...defaultDeformTypes];
             });
 
-            if (selectedShapeId) {
-                renderSelectedShapeEditor(); // Cập nhật editor nếu có shape đang được chọn
+            if (selectedShape) {
+                renderSelectedShapeEditor();
             }
-            renderJsonOutput(); // Cập nhật 3D view
+            renderJsonOutput();
             showToast(`Đã áp dụng giá trị mặc định cho ${shapesData.length} shapes.`, 'success');
         };
 
         copyLineGeometryBtn.onclick = () => {
-            const lineGeometryJsonString = generateJsonString(true); // true để bao gồm lines
+            const lineGeometryJsonString = generateJsonString(true);
             if (!lineGeometryJsonString) {
                 showToast('Không có dữ liệu Line Geometry JSON để sao chép.', 'info');
                 return;
@@ -1770,7 +1675,7 @@
         };
 
         copyStdGeometryBtn.onclick = () => {
-            const stdGeometryJsonString = generateJsonString(false); // false để không bao gồm lines
+            const stdGeometryJsonString = generateJsonString(false);
             if (!stdGeometryJsonString) {
                 showToast('Không thể tạo Standard Geometry JSON.', 'info');
                 return;
@@ -1786,7 +1691,7 @@
         // --- Toast Notification Function ---
         function showToast(message, type = 'info') {
             const toastContainer = document.querySelector('.toast-container');
-            if (!toastContainer) return; // Should not happen if HTML is correct
+            if (!toastContainer) return;
 
             const toastId = 'toast-' + Date.now();
             let toastHeaderClass = '';
@@ -1795,19 +1700,19 @@
             switch (type) {
                 case 'success':
                     toastHeaderClass = 'bg-success text-white';
-                    toastIcon = '✔️'; // Simple check icon
+                    toastIcon = '✔️';
                     break;
                 case 'error':
                     toastHeaderClass = 'bg-danger text-white';
-                    toastIcon = '❌'; // Simple cross icon
+                    toastIcon = '❌';
                     break;
                 case 'warning':
                     toastHeaderClass = 'bg-warning text-dark';
-                    toastIcon = '⚠️'; // Simple warning icon
+                    toastIcon = '⚠️';
                     break;
-                default: // info
+                default:
                     toastHeaderClass = 'bg-info text-white';
-                    toastIcon = 'ℹ️'; // Simple info icon
+                    toastIcon = 'ℹ️';
                     break;
             }
 
@@ -1827,9 +1732,8 @@
 
             toastContainer.insertAdjacentHTML('beforeend', toastHTML);
             const toastElement = document.getElementById(toastId);
-            $(toastElement).toast('show'); // Initialize and show the toast using jQuery
+            $(toastElement).toast('show');
 
-            // Optional: Remove the toast from DOM after it's hidden
             $(toastElement).on('hidden.bs.toast', function () {
                 this.remove();
             });
@@ -1837,13 +1741,11 @@
 
         // --- Initialization ---
         function init() {
-            // Có thể load dữ liệu mẫu hoặc từ localStorage ở đây
-            objectNameInput.value = currentObjectName; // Đảm bảo input hiển thị giá trị khởi tạo
-
-            renderShapesList();
-            renderSelectedShapeEditor(); // Ban đầu sẽ ẩn editor
-            renderJsonOutput(); // This will also call update3DView
+            objectNameInput.value = currentObjectName;
             init3DViewer();
+            renderShapesList();
+            renderSelectedShapeEditor();
+            renderJsonOutput();
         }
 
         init();
@@ -1851,7 +1753,6 @@
         // --- Raycaster Click Handler ---
         function onDocumentMouseDown(event) {
             event.preventDefault();
-            console.log(event);
 
             const rect = renderer.domElement.getBoundingClientRect();
             mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -1863,7 +1764,6 @@
             if (intersects.length > 0) {
                 let clickedObject = intersects[0].object;
                 let parentGroupWithShapeId = null;
-                console.log(clickedObject);
 
                 while (clickedObject && clickedObject !== scene) {
                     if (clickedObject.userData && clickedObject.userData.shapeId) {
