@@ -551,6 +551,10 @@
         // Raycaster for picking objects
         let raycaster;
         let mouse;
+        // Variables to distinguish click from drag
+        let isDragging = false;
+        const dragThreshold = 5; // To prevent tiny movements from being counted as a drag
+        let mouseDownPosition = new THREE.Vector2();
 
         // --- Helper function to create text sprites (moved to a more global scope) ---
         function createTextSprite(message, parameters) {
@@ -705,7 +709,9 @@
             // Initialize Raycaster
             raycaster = new THREE.Raycaster();
             mouse = new THREE.Vector2();
-            renderer.domElement.addEventListener('pointerdown', onDocumentMouseDown, false);
+            renderer.domElement.addEventListener('pointerdown', onPointerDownHandler, false);
+            renderer.domElement.addEventListener('pointermove', onPointerMoveHandler, false);
+            renderer.domElement.addEventListener('pointerup', onPointerUpHandler, false);
 
             // Animation loop for controls damping
             function animate() {
@@ -1767,16 +1773,39 @@
 
         init();
 
-        // --- Raycaster Click Handler ---
-        function onDocumentMouseDown(event) {
-            event.preventDefault();
+        // --- Raycaster Click vs. Drag Handling ---
+        function onPointerDownHandler(event) {
+            isDragging = false;
+            mouseDownPosition.set(event.clientX, event.clientY);
 
             // Force blur on any active input element in the editor to trigger 'onchange'.
-            // This ensures data is saved before the shape selection changes.
+            // This is important and should happen at the start of any interaction.
             const activeElement = document.activeElement;
             if (activeElement && activeElement.tagName === 'INPUT' && shapeEditorContainer.contains(activeElement)) {
                 activeElement.blur();
             }
+        }
+
+        function onPointerMoveHandler(event) {
+            // If the mouse moves more than the threshold, it's a drag.
+            if (isDragging) return;
+
+            const deltaX = Math.abs(event.clientX - mouseDownPosition.x);
+            const deltaY = Math.abs(event.clientY - mouseDownPosition.y);
+
+            if (deltaX > dragThreshold || deltaY > dragThreshold) {
+                isDragging = true;
+            }
+        }
+
+        function onPointerUpHandler(event) {
+            // If it was a drag, do nothing. OrbitControls handles the camera.
+            if (isDragging) {
+                return;
+            }
+
+            // Otherwise, it's a click. Proceed with selection.
+            event.preventDefault(); // Prevent any default browser action.
 
             const rect = renderer.domElement.getBoundingClientRect();
             mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
