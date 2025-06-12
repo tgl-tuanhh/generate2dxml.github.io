@@ -947,7 +947,7 @@
 
         function generateJsonString(includeLines) {
             const shapesForJson = shapesData.map((s, index) => {
-                const { _internalId, pivot, stdMaterial, deformTypes, ...shapeRest } = s; // Lấy thêm stdMaterial, deformTypes
+                const { _internalId, pivot, stdMaterial, deformTypes, hasBeenManuallyEdited, ...shapeRest } = s; // Lấy thêm stdMaterial, deformTypes và loại bỏ hasBeenManuallyEdited
                 const currentPivot = pivot && Array.isArray(pivot) && pivot.length === 3 ? pivot : [0, 0, 0];
 
                 const mode = includeLines ? "Line" : "Std";
