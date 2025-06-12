@@ -527,6 +527,80 @@
     }
 
     // --- Tool Specific Logic ---
+    /**
+     * Finds the boundary loops from a set of faces.
+     * This is used to correctly trace concave shapes and shapes with holes.
+     * @param {Array<Array<number>>} faces - An array of faces, where each face is an array of vertex indices.
+     * @param {object} shape - The shape object from the JSON data, containing the vertex map 'v'.
+     * @returns {Array<Array<{x: number, y: number}>>} - An array of loops, where each loop is an ordered array of 2D points.
+     */
+    function getBoundaryLoops(faces, shape) {
+      const edgeToFaceCount = new Map();
+      const edgeToDirected = new Map();
+
+      faces.forEach(vertexIndices => {
+        for (let i = 0; i < vertexIndices.length; i++) {
+          const v1 = vertexIndices[i];
+          const v2 = vertexIndices[(i + 1) % vertexIndices.length];
+          const edgeKey = `${Math.min(v1, v2)}:${Math.max(v1, v2)}`;
+          edgeToFaceCount.set(edgeKey, (edgeToFaceCount.get(edgeKey) || 0) + 1);
+          // Store the directed edge to reconstruct the path later
+          if (!edgeToDirected.has(edgeKey)) edgeToDirected.set(edgeKey, []);
+          edgeToDirected.get(edgeKey).push([v1, v2]);
+        }
+      });
+
+      const boundaryEdgesAdj = new Map();
+      for (const [edgeKey, count] of edgeToFaceCount.entries()) {
+        if (count === 1) {
+          const [v1, v2] = edgeToDirected.get(edgeKey)[0];
+          if (!boundaryEdgesAdj.has(v1)) boundaryEdgesAdj.set(v1, []);
+          boundaryEdgesAdj.get(v1).push(v2);
+        }
+      }
+
+      const loops = [];
+      const visitedNodes = new Set();
+
+      while (boundaryEdgesAdj.size > 0) {
+        const path = [];
+        const startNode = boundaryEdgesAdj.keys().next().value;
+        let currentNode = startNode;
+
+        while (currentNode !== undefined && !visitedNodes.has(currentNode)) {
+          visitedNodes.add(currentNode);
+          path.push(currentNode);
+          const nextNode = (boundaryEdgesAdj.get(currentNode) || [])[0];
+          boundaryEdgesAdj.delete(currentNode); // Consume the edge
+          currentNode = nextNode;
+        }
+
+        if (path.length > 1) {
+          const projectedPath = path.map(vIdx => {
+            const v = shape.v[vIdx.toString()];
+            // Use .toFixed to be consistent with how points were created
+            return { x: parseFloat(v[0].toFixed(3)), y: parseFloat(v[1].toFixed(3)) };
+          });
+
+          // De-duplicate consecutive points in the final path which can happen with small segments
+          if (projectedPath.length > 1) {
+            const finalCleanPath = [projectedPath[0]];
+            for (let i = 1; i < projectedPath.length; i++) {
+              const p1 = finalCleanPath[finalCleanPath.length - 1];
+              const p2 = projectedPath[i];
+              if (p1.x !== p2.x || p1.y !== p2.y) {
+                finalCleanPath.push(p2);
+              }
+            }
+            if (finalCleanPath.length > 1) {
+              loops.push(finalCleanPath);
+            }
+          }
+        }
+      }
+      return loops;
+    }
+
     function calculateConvexHull(points) {
       if (points.length <= 2) {
         return [...points]; // Or handle as an edge case, e.g., return empty if < 3 for polygon
@@ -618,8 +692,7 @@
         throw new Error("Invalid JSON structure. Expected a 'shapes' array.");
       }
 
-      let tplElements = "";
-      let processedFootprints = new Map(); // Key: canonical string of 2D HULL points, Value: candidate object
+      let allFoundGeometries = [];
 
       jsonData.shapes.forEach((shape, shapeIndex) => {
         if (!shape.v || !shape.faces) {
@@ -627,118 +700,70 @@
           return;
         }
 
-        let facesByAvgZ = new Map(); // Map<number (rounded avgZ), { uniqueProjectedPoints: Point[], originalFaceKey: string }[]>
+        let facesByAvgZ = new Map();
 
         Object.keys(shape.faces).forEach(faceKey => {
           const faceData = shape.faces[faceKey];
-          if (!faceData || !Array.isArray(faceData.vertices)) {
-            console.warn(`Face '${faceKey}' in shape '${shape.name || 'Unnamed'}' is invalid or missing vertices. Skipping.`);
+          if (!faceData || !Array.isArray(faceData.vertices) || faceData.vertices.length < 2) { // Allow lines (2 vertices)
+            console.warn(`Face '${faceKey}' in shape '${shape.name || 'Unnamed'}' is invalid or has < 2 vertices. Skipping.`);
             return;
           }
 
           const faceVertexIndices = faceData.vertices;
-          let currentProjected2DPoints = [];
           let sumZ = 0;
           let numZ = 0;
-          let allVerticesValidForFace = true;
 
           faceVertexIndices.forEach((vertexIndex) => {
             const vertexKeyStr = vertexIndex.toString();
-            if (!shape.v[vertexKeyStr] || !Array.isArray(shape.v[vertexKeyStr]) || shape.v[vertexKeyStr].length < 2) {
-              console.warn(`Vertex ${vertexKeyStr} (index ${vertexIndex}) not found, invalid, or incomplete in shape '${shape.name || 'Unnamed'}' for face '${faceKey}'. Skipping point for this face.`);
-              allVerticesValidForFace = false;
-              return;
-            }
-            currentProjected2DPoints.push({ x: shape.v[vertexKeyStr][0], y: shape.v[vertexKeyStr][1] });
-            if (shape.v[vertexKeyStr].length >= 3) {
+            if (shape.v[vertexKeyStr] && shape.v[vertexKeyStr].length >= 3) {
               sumZ += shape.v[vertexKeyStr][2];
               numZ++;
             }
           });
 
-          if (!allVerticesValidForFace || currentProjected2DPoints.length < 3) {
-            return;
-          }
-
-          const uniqueProjectedPointsForFace = [];
-          const pointSetForFace = new Set();
-          currentProjected2DPoints.forEach(p => {
-            const key = `${p.x.toFixed(3)},${p.y.toFixed(3)}`; // Use toFixed for consistent keying
-            if (!pointSetForFace.has(key)) {
-              pointSetForFace.add(key);
-              uniqueProjectedPointsForFace.push({ x: parseFloat(p.x.toFixed(3)), y: parseFloat(p.y.toFixed(3)) });
+          if (numZ > 0) {
+            const currentFaceAvgZ = sumZ / numZ;
+            const roundedAvgZ = parseFloat(currentFaceAvgZ.toFixed(3));
+            if (!facesByAvgZ.has(roundedAvgZ)) {
+              facesByAvgZ.set(roundedAvgZ, []);
             }
-          });
-
-          if (uniqueProjectedPointsForFace.length < 3) {
-            return;
+            facesByAvgZ.get(roundedAvgZ).push(faceVertexIndices);
           }
-
-          const currentFaceAvgZ = (numZ > 0) ? (sumZ / numZ) : -Infinity;
-          const roundedAvgZ = parseFloat(currentFaceAvgZ.toFixed(3)); // Group by rounded Z
-
-          if (!facesByAvgZ.has(roundedAvgZ)) {
-            facesByAvgZ.set(roundedAvgZ, []);
-          }
-          facesByAvgZ.get(roundedAvgZ).push({
-            uniqueProjectedPoints: uniqueProjectedPointsForFace, // Points of THIS face
-            originalFaceKey: faceKey // Keep for debugging or potential future use
-          });
         });
 
-        // Process each Z-level group for the current shape
-        facesByAvgZ.forEach((faceListAtZ, avgZ_num) => {
-          let all2DPointsAtThisZ = [];
-          faceListAtZ.forEach(faceInfo => {
-            all2DPointsAtThisZ.push(...faceInfo.uniqueProjectedPoints);
-          });
-
-          const uniqueOverall2DPointsAtThisZ = [];
-          const pointSetOverall = new Set();
-          all2DPointsAtThisZ.forEach(p => {
-            const key = `${p.x.toFixed(3)},${p.y.toFixed(3)}`;
-            if (!pointSetOverall.has(key)) {
-              pointSetOverall.add(key);
-              uniqueOverall2DPointsAtThisZ.push(p); // p is already {x, y} with precision
+        // For each Z-level, find boundary loops.
+        facesByAvgZ.forEach((facesAtZ, zLevel) => {
+          const loops = getBoundaryLoops(facesAtZ, shape);
+          loops.forEach(loopPoints => {
+            if (loopPoints.length > 0) {
+              allFoundGeometries.push({
+                points: loopPoints,
+                avgZ: zLevel,
+                shapeName: shape.name || `shape_${shapeIndex}`
+              });
             }
           });
-
-          if (uniqueOverall2DPointsAtThisZ.length < 3) return;
-
-          const hullPoints = calculateConvexHull(uniqueOverall2DPointsAtThisZ);
-          if (!hullPoints || hullPoints.length < 3) {
-            // console.warn(`Hull for shape '${shape.name}', Z=${avgZ_num} resulted in <3 points. Points:`, uniqueOverall2DPointsAtThisZ);
-            return;
-          }
-
-          const candidateData = {
-            points2DForFootprint: hullPoints, // Hull points define the footprint
-            avgZ: avgZ_num,
-            originalVerticesOrder: hullPoints, // Hull points for drawing
-            shapeName: shape.name || `shape_${shapeIndex}`
-          };
-
-          // Create a canonical key from sorted hull points
-          let canonicalKeyPoints = [...hullPoints].sort((a, b) => {
-            if (a.x !== b.x) return a.x - b.x;
-            return a.y - b.y;
-          });
-          let footprintKey = canonicalKeyPoints.map(p => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(';');
-
-          if (!processedFootprints.has(footprintKey) || candidateData.avgZ > processedFootprints.get(footprintKey).avgZ) {
-            processedFootprints.set(footprintKey, candidateData);
-          }
         });
       });
 
-      // Generate XML for the selected (top-most for each hull footprint ACROSS ALL SHAPES) polygons
-      let tplCounter = 0;
-      processedFootprints.forEach((selectedPolygon, footprintKey) => {
-        let polygonPointsAttrs = "";
-        selectedPolygon.originalVerticesOrder.forEach((p, i) => {
-          polygonPointsAttrs += `x${i + 1}="${p.x}" y${i + 1}="${p.y}" `;
-        });
+      // Post-process to handle occlusions: keep only the top-most geometry for any given area.
+      // This is a simplification; true occlusion is more complex. We use the first point as a key.
+      const processedGeometries = new Map();
+      allFoundGeometries.sort((a, b) => a.avgZ - b.avgZ); // Process from bottom to top
 
+      allFoundGeometries.forEach(geom => {
+        // Using a simplified key from the first point. Not perfect for complex overlaps but better than nothing.
+        const footprintKey = `${geom.points[0].x},${geom.points[0].y}`;
+        // Since we sorted by Z, we just overwrite, keeping the last (highest) one.
+        processedGeometries.set(footprintKey, geom);
+      });
+
+
+      // Generate XML for the final selected geometries
+      let tplCounter = 0;
+      let tplElements = "";
+      processedGeometries.forEach((selectedGeom) => {
+        const isLine = selectedGeom.points.length === 2;
         const defaultForec = "#ff000000";
         const defaultFillc = "#ffffffff";
         const lineTypeName = "";
@@ -747,18 +772,32 @@
         const lineTypeCap = "BUTT";
         const lineTypeJoin = "MITER";
         const lineTypeMiterLimit = "1.0";
-
-        // Generate unique IDs
         const tplId = `tpl-${tplCounter}`;
-        const polygonId = tplCounter.toString(); // Changed: ID polygon là số tăng dần
+        const elementId = tplCounter.toString();
+        let elementXml = "";
+
+        if (isLine) {
+          const p1 = selectedGeom.points[0];
+          const p2 = selectedGeom.points[1];
+          const segments = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
+          elementXml = `
+  <PATH id="${elementId}" segments="${segments}" forec="${defaultForec}" drawline="1" fill="0">
+   <LINETYPE name="${lineTypeName}" width="${lineTypeWidth}" widthtype="${lineTypeWidthType}" cap="${lineTypeCap}" join="${lineTypeJoin}" miterlimit="${lineTypeMiterLimit}"/>
+  </PATH>`;
+        } else { // Polygon
+          let polygonPointsAttrs = "";
+          selectedGeom.points.forEach((p, i) => {
+            polygonPointsAttrs += `x${i + 1}="${p.x}" y${i + 1}="${p.y}" `;
+          });
+          elementXml = `
+  <POLYGON id="${elementId}" width="0.0" forec="${defaultForec}" fillc="${defaultFillc}" drawline="1" fill="1" smooth="0" pointsize="4" ${polygonPointsAttrs.trim()}>
+   <LINETYPE name="${lineTypeName}" width="${lineTypeWidth}" widthtype="${lineTypeWidthType}" cap="${lineTypeCap}" join="${lineTypeJoin}" miterlimit="${lineTypeMiterLimit}"/>
+  </POLYGON>`;
+        }
 
         tplElements += `
 <TPL id="${tplId}" matFill="mat1" matLine="mat2" deformTypes="Stretch2,Clipping">
- <geometry>
-  <POLYGON id="${polygonId}" width="0.0" forec="${defaultForec}" fillc="${defaultFillc}" drawline="1" fill="1" smooth="0" pointsize="4" ${polygonPointsAttrs.trim()}>
-   <LINETYPE name="${lineTypeName}" width="${lineTypeWidth}" widthtype="${lineTypeWidthType}" cap="${lineTypeCap}" join="${lineTypeJoin}" miterlimit="${lineTypeMiterLimit}"/>
-  </POLYGON>
- </geometry>
+ <geometry>${elementXml.trim()}</geometry>
 </TPL>`;
         tplCounter++;
       });
