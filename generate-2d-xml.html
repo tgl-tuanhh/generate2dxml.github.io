@@ -781,7 +781,8 @@
       // Generate XML for the final selected geometries
       let tplCounter = 0;
       let tplElements = "";
-      processedGeometries.forEach((selectedGeom) => {
+      const uniqueGeometries = [...new Set(processedGeometries.values())]; // Get unique geometries
+      uniqueGeometries.forEach((selectedGeom) => {
         const isLine = selectedGeom.points.length === 2;
         const defaultForec = "#ff000000";
         const defaultFillc = "#ffffffff";
