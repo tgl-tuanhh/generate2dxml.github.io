@@ -628,7 +628,8 @@
             // Camera
             const aspect = threeJsCanvasContainer.clientWidth / threeJsCanvasContainer.clientHeight;
             camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 10000);
-            camera.position.set(100, 100, 500); // Điều chỉnh vị trí camera cho phù hợp với dữ liệu của bạn
+            camera.up.set(0, 0, 1); // Đặt trục Z là trục chiều cao
+            camera.position.set(400, 400, 400); // Cập nhật vị trí camera để có góc nhìn tốt hơn
             camera.lookAt(0, 0, 0);
 
             // Renderer
@@ -823,7 +824,7 @@
                         fontface: 'monospace'
                     });
                     labelSprite.position.copy(vertexPosition);
-                    labelSprite.position.y += (currentWorldHeight * 0.5) + 2;
+                    labelSprite.position.z += (currentWorldHeight * 0.5) + 2; // Dịch chuyển nhãn lên trên theo trục Z
                     if (isSelected) { // Chỉ thêm label vào group của shape nếu shape được chọn
                         shapeSpecificGroup.add(labelSprite);
                     }
