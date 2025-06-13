@@ -700,42 +700,49 @@
           return;
         }
 
-        let facesByAvgZ = new Map();
-
+        const topFaces = [];
         Object.keys(shape.faces).forEach(faceKey => {
           const faceData = shape.faces[faceKey];
-          if (!faceData || !Array.isArray(faceData.vertices) || faceData.vertices.length < 2) { // Allow lines (2 vertices)
-            console.warn(`Face '${faceKey}' in shape '${shape.name || 'Unnamed'}' is invalid or has < 2 vertices. Skipping.`);
+          if (!faceData || !Array.isArray(faceData.vertices) || faceData.vertices.length < 3) {
+            return; // Not a valid polygon for normal calculation.
+          }
+
+          const vIndices = faceData.vertices;
+          const v0_idx = vIndices[0].toString();
+          const v1_idx = vIndices[1].toString();
+          const v2_idx = vIndices[2].toString();
+
+          if (!shape.v[v0_idx] || !shape.v[v1_idx] || !shape.v[v2_idx]) {
+            console.warn(`Face '${faceKey}' in shape '${shape.name || 'Unnamed'}' refers to missing vertices. Skipping.`);
             return;
           }
 
-          const faceVertexIndices = faceData.vertices;
-          let sumZ = 0;
-          let numZ = 0;
+          const p0 = shape.v[v0_idx];
+          const p1 = shape.v[v1_idx];
+          const p2 = shape.v[v2_idx];
 
-          faceVertexIndices.forEach((vertexIndex) => {
-            const vertexKeyStr = vertexIndex.toString();
-            if (shape.v[vertexKeyStr] && shape.v[vertexKeyStr].length >= 3) {
-              sumZ += shape.v[vertexKeyStr][2];
-              numZ++;
-            }
-          });
+          // Create vectors from the first three points of the face.
+          const u = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+          const v = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
 
-          if (numZ > 0) {
-            const currentFaceAvgZ = sumZ / numZ;
-            const roundedAvgZ = parseFloat(currentFaceAvgZ.toFixed(3));
-            if (!facesByAvgZ.has(roundedAvgZ)) {
-              facesByAvgZ.set(roundedAvgZ, []);
-            }
-            facesByAvgZ.get(roundedAvgZ).push(faceVertexIndices);
+          // Calculate the Z component of the cross product (normal vector).
+          // A positive Z indicates the face is pointing upwards.
+          const normalZ = u[0] * v[1] - u[1] * v[0];
+
+          if (normalZ > 1e-9) { // Using a small tolerance for floating point comparisons
+            topFaces.push(vIndices);
           }
         });
 
-        // For each Z-level, find boundary loops.
-        facesByAvgZ.forEach((facesAtZ, zLevel) => {
-          const loops = getBoundaryLoops(facesAtZ, shape);
+        // If any top-facing faces were found, process them together.
+        // This correctly finds the outer boundary of multiple adjacent top-facing planes.
+        if (topFaces.length > 0) {
+          const loops = getBoundaryLoops(topFaces, shape);
           loops.forEach(loopPoints => {
             if (loopPoints.length > 0) {
+              // Use the Z-level of the first point of the first top face.
+              // This is a simplification but works for co-planar top surfaces.
+              const zLevel = shape.v[topFaces[0][0].toString()][2];
               allFoundGeometries.push({
                 points: loopPoints,
                 avgZ: zLevel,
@@ -743,21 +750,33 @@
               });
             }
           });
-        });
+        }
       });
 
-      // Post-process to handle occlusions: keep only the top-most geometry for any given area.
-      // This is a simplification; true occlusion is more complex. We use the first point as a key.
+      // The old occlusion logic is now less critical but can still serve to resolve
+      // overlaps between different shapes or distinct Z-levels within a single shape.
+      // We sort by Z from bottom to top, so higher geometries overwrite lower ones.
+      allFoundGeometries.sort((a, b) => a.avgZ - b.avgZ);
+
+      // A clipping library would be needed for perfect occlusion, but for many cases,
+      // simply taking the highest geometry at a given point is a reasonable approximation.
+      // This part of the logic is kept but is more effective with the new top-face filtering.
       const processedGeometries = new Map();
-      allFoundGeometries.sort((a, b) => a.avgZ - b.avgZ); // Process from bottom to top
-
       allFoundGeometries.forEach(geom => {
-        // Using a simplified key from the first point. Not perfect for complex overlaps but better than nothing.
-        const footprintKey = `${geom.points[0].x},${geom.points[0].y}`;
-        // Since we sorted by Z, we just overwrite, keeping the last (highest) one.
-        processedGeometries.set(footprintKey, geom);
-      });
+        // Create a representative key for the geometry's area. Using multiple points
+        // provides a better chance of detecting overlaps than the previous implementation.
+        // This is still a heuristic.
+        const footprintKey = geom.points.map(p => `${p.x},${p.y}`).join(';');
+        // We can't use the whole footprint as a key if it's slightly different.
+        // Let's use a simpler key based on a few sample points.
+        const key1 = `${geom.points[0].x},${geom.points[0].y}`;
+        const key2 = `${geom.points[Math.floor(geom.points.length / 2)].x},${geom.points[Math.floor(geom.points.length / 2)].y}`;
 
+        // By sorting by Z first, later (higher) geometries will overwrite earlier (lower) ones
+        // for the same key, providing a basic form of occlusion.
+        processedGeometries.set(key1, geom);
+        processedGeometries.set(key2, geom);
+      });
 
       // Generate XML for the final selected geometries
       let tplCounter = 0;
