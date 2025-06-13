@@ -1276,6 +1276,14 @@
             const shape = selectedShape;
             if (!shape.faces[faceKeyToDelete]) return;
             delete shape.faces[faceKeyToDelete];
+            // Đánh lại key index cho faces, bắt đầu từ 1
+            const newFaces = {};
+            let idx = 1;
+            Object.values(shape.faces).forEach(faceData => {
+                newFaces[idx.toString()] = faceData;
+                idx++;
+            });
+            shape.faces = newFaces;
             renderFacesList(shape);
             renderJsonOutput();
         }
