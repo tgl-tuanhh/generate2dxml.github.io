@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Generate 2D XML from 3D JSON</title>
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/loader.js"></script>
+  <script src="vkbeautify.0.99.00.beta.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -877,12 +878,13 @@
 
 
     function displayGeneratedXml(xmlString) {
+      const beautifiedXml = vkbeautify.xml(xmlString, '\t');
       if (xmlOutputEditor) {
-        xmlOutputEditor.setValue(xmlString);
+        xmlOutputEditor.setValue(beautifiedXml);
       } else {
         // Fallback if editor not initialized (should not happen with current flow)
         const tempTextArea = document.createElement('textarea');
-        tempTextArea.value = xmlString;
+        tempTextArea.value = beautifiedXml;
         tempTextArea.style.width = '100%';
         tempTextArea.style.height = '100%';
         xmlEditorInnerContainer.innerHTML = '';
