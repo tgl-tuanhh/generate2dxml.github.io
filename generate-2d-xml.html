@@ -6,7 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Generate 2D XML from 3D JSON</title>
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/loader.js"></script>
-  <script src="vkbeautify.0.99.00.beta.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -147,7 +146,6 @@
     const loadJsonButton = document.getElementById('loadJsonFromClipboardButton');
     const copyXmlButton = document.getElementById('copyXmlButton');
     const userMessageDiv = document.getElementById('userMessage');
-    let currentlyHighlightedSvgElementId = null; // Variable to store the ID of the currently highlighted SVG element
 
     // --- SVG Viewer Code (Copied and adapted from geom2d-editor.html) ---
     class SvgConverter {
@@ -382,13 +380,6 @@
         const svgPolygon = document.createElementNS(this.svgNS, "polygon");
         svgPolygon.setAttribute("points", points.join(" "));
         this.applyCommonAttributes(svgPolygon, xmlElement);
-
-        // Get ID from XML element and set it on SVG element
-        const xmlId = xmlElement.getAttribute("id");
-        if (xmlId) {
-          svgPolygon.setAttribute("id", xmlId);
-        }
-
         return svgPolygon;
       }
     }
@@ -528,172 +519,15 @@
     }
 
     // --- Tool Specific Logic ---
-    /**
-     * Finds the boundary loops from a set of faces.
-     * This is used to correctly trace concave shapes and shapes with holes.
-     * @param {Array<Array<number>>} faces - An array of faces, where each face is an array of vertex indices.
-     * @param {object} shape - The shape object from the JSON data, containing the vertex map 'v'.
-     * @returns {Array<Array<{x: number, y: number}>>} - An array of loops, where each loop is an ordered array of 2D points.
-     */
-    function getBoundaryLoops(faces, shape) {
-      const edgeToFaceCount = new Map();
-      const edgeToDirected = new Map();
-
-      faces.forEach(vertexIndices => {
-        for (let i = 0; i < vertexIndices.length; i++) {
-          const v1 = vertexIndices[i];
-          const v2 = vertexIndices[(i + 1) % vertexIndices.length];
-          const edgeKey = `${Math.min(v1, v2)}:${Math.max(v1, v2)}`;
-          edgeToFaceCount.set(edgeKey, (edgeToFaceCount.get(edgeKey) || 0) + 1);
-          // Store the directed edge to reconstruct the path later
-          if (!edgeToDirected.has(edgeKey)) edgeToDirected.set(edgeKey, []);
-          edgeToDirected.get(edgeKey).push([v1, v2]);
-        }
-      });
-
-      const boundaryEdgesAdj = new Map();
-      for (const [edgeKey, count] of edgeToFaceCount.entries()) {
-        if (count === 1) {
-          const [v1, v2] = edgeToDirected.get(edgeKey)[0];
-          if (!boundaryEdgesAdj.has(v1)) boundaryEdgesAdj.set(v1, []);
-          boundaryEdgesAdj.get(v1).push(v2);
-        }
-      }
-
-      const loops = [];
-      const visitedNodes = new Set();
-
-      while (boundaryEdgesAdj.size > 0) {
-        const path = [];
-        const startNode = boundaryEdgesAdj.keys().next().value;
-        let currentNode = startNode;
-
-        while (currentNode !== undefined && !visitedNodes.has(currentNode)) {
-          visitedNodes.add(currentNode);
-          path.push(currentNode);
-          const nextNode = (boundaryEdgesAdj.get(currentNode) || [])[0];
-          boundaryEdgesAdj.delete(currentNode); // Consume the edge
-          currentNode = nextNode;
-        }
-
-        if (path.length > 1) {
-          const projectedPath = path.map(vIdx => {
-            const v = shape.v[vIdx.toString()];
-            // Use .toFixed to be consistent with how points were created
-            return { x: parseFloat(v[0].toFixed(3)), y: parseFloat(v[1].toFixed(3)) };
-          });
-
-          // De-duplicate consecutive points in the final path which can happen with small segments
-          if (projectedPath.length > 1) {
-            const finalCleanPath = [projectedPath[0]];
-            for (let i = 1; i < projectedPath.length; i++) {
-              const p1 = finalCleanPath[finalCleanPath.length - 1];
-              const p2 = projectedPath[i];
-              if (p1.x !== p2.x || p1.y !== p2.y) {
-                finalCleanPath.push(p2);
-              }
-            }
-            if (finalCleanPath.length > 1) {
-              loops.push(finalCleanPath);
-            }
-          }
-        }
-      }
-      return loops;
-    }
-
-    function calculateConvexHull(points) {
-      if (points.length <= 2) {
-        return [...points]; // Or handle as an edge case, e.g., return empty if < 3 for polygon
-      }
-
-      // Sort points lexicographically (by x, then by y)
-      points.sort((a, b) => {
-        if (a.x !== b.x) {
-          return a.x - b.x;
-        }
-        return a.y - b.y;
-      });
-
-      // Remove duplicate points after sorting
-      const uniquePoints = [];
-      if (points.length > 0) {
-        uniquePoints.push(points[0]);
-        for (let i = 1; i < points.length; i++) {
-          if (points[i].x !== points[i - 1].x || points[i].y !== points[i - 1].y) {
-            uniquePoints.push(points[i]);
-          }
-        }
-      }
-
-      if (uniquePoints.length <= 2) return [...uniquePoints];
-
-      const upper = [];
-      const lower = [];
-
-      // Cross product to determine turn direction
-      // (p1, p2, p3) -> (p2.x - p1.x)*(p3.y - p1.y) - (p2.y - p1.y)*(p3.x - p1.x)
-      // > 0 for counter-clockwise turn (left turn)
-      // < 0 for clockwise turn (right turn)
-      // = 0 for collinear points
-      const crossProduct = (p1, p2, p3) => {
-        return (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
-      };
-
-      // Build upper hull
-      for (const p of uniquePoints) {
-        while (upper.length >= 2 && crossProduct(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
-          upper.pop();
-        }
-        upper.push(p);
-      }
-
-      // Build lower hull
-      for (let i = uniquePoints.length - 1; i >= 0; i--) {
-        const p = uniquePoints[i];
-        while (lower.length >= 2 && crossProduct(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
-          lower.pop();
-        }
-        lower.push(p);
-      }
-
-      // Concatenate hulls, removing duplicates (first and last points of upper/lower are same as last/first of other)
-      lower.pop();
-      upper.pop();
-      return upper.concat(lower);
-    }
-
-    function clearCurrentHighlight() {
-      if (currentlyHighlightedSvgElementId) {
-        const previouslyHighlightedElement = svgViewerPanel.querySelector(`#${currentlyHighlightedSvgElementId}`);
-        if (previouslyHighlightedElement) {
-          previouslyHighlightedElement.classList.remove('highlighted-svg-element');
-        }
-        currentlyHighlightedSvgElementId = null;
-      }
-    }
-
-    function highlightSvgElementById(elementId) {
-      clearCurrentHighlight(); // Clear previous highlight first
-
-      if (elementId) {
-        const svgElementToHighlight = svgViewerPanel.querySelector(`#${elementId}`);
-        if (svgElementToHighlight) {
-          svgElementToHighlight.classList.add('highlighted-svg-element');
-          currentlyHighlightedSvgElementId = elementId;
-        } else {
-          // console.warn(`SVG element with ID '${elementId}' not found for highlighting.`);
-        }
-      }
-    }
-
     function convert3dJsonTo2dTargetXml(jsonData) {
       if (!jsonData || !Array.isArray(jsonData.shapes)) {
         console.error("Invalid JSON data structure: 'shapes' array not found.", jsonData);
         throw new Error("Invalid JSON structure. Expected a 'shapes' array.");
       }
 
-      let allFoundGeometries = [];
+      let tplElements = "";
+      // Initialize processedFootprints globally for the entire JSON input
+      let processedFootprints = new Map(); // Key: canonical string of 2D points, Value: candidate object
 
       jsonData.shapes.forEach((shape, shapeIndex) => {
         if (!shape.v || !shape.faces) {
@@ -701,90 +535,81 @@
           return;
         }
 
-        const topFaces = [];
+        // No longer need candidatePolygonsForShape here, process directly into global processedFootprints
+        // let candidatePolygonsForShape = []; 
+
         Object.keys(shape.faces).forEach(faceKey => {
           const faceData = shape.faces[faceKey];
-          if (!faceData || !Array.isArray(faceData.vertices) || faceData.vertices.length < 3) {
-            return; // Not a valid polygon for normal calculation.
-          }
-
-          const vIndices = faceData.vertices;
-          const v0_idx = vIndices[0].toString();
-          const v1_idx = vIndices[1].toString();
-          const v2_idx = vIndices[2].toString();
-
-          if (!shape.v[v0_idx] || !shape.v[v1_idx] || !shape.v[v2_idx]) {
-            console.warn(`Face '${faceKey}' in shape '${shape.name || 'Unnamed'}' refers to missing vertices. Skipping.`);
+          if (!faceData || !Array.isArray(faceData.vertices)) {
+            console.warn(`Face '${faceKey}' in shape '${shape.name || 'Unnamed'}' is invalid or missing vertices. Skipping.`);
             return;
           }
 
-          const p0 = shape.v[v0_idx];
-          const p1 = shape.v[v1_idx];
-          const p2 = shape.v[v2_idx];
+          const faceVertexIndices = faceData.vertices;
+          let currentProjected2DPoints = [];
+          let sumZ = 0;
+          let numZ = 0;
+          let allVerticesValidForFace = true;
 
-          // Create vectors from the first three points of the face.
-          const u = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
-          const v = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
-
-          // Calculate the Z component of the cross product (normal vector).
-          // A positive Z indicates the face is pointing upwards.
-          const normalZ = u[0] * v[1] - u[1] * v[0];
-
-          if (normalZ > 1e-9) { // Using a small tolerance for floating point comparisons
-            topFaces.push(vIndices);
-          }
-        });
-
-        // If any top-facing faces were found, process them together.
-        // This correctly finds the outer boundary of multiple adjacent top-facing planes.
-        if (topFaces.length > 0) {
-          const loops = getBoundaryLoops(topFaces, shape);
-          loops.forEach(loopPoints => {
-            if (loopPoints.length > 0) {
-              // Use the Z-level of the first point of the first top face.
-              // This is a simplification but works for co-planar top surfaces.
-              const zLevel = shape.v[topFaces[0][0].toString()][2];
-              allFoundGeometries.push({
-                points: loopPoints,
-                avgZ: zLevel,
-                shapeName: shape.name || `shape_${shapeIndex}`
-              });
+          faceVertexIndices.forEach((vertexIndex) => {
+            const vertexKeyStr = vertexIndex.toString();
+            if (!shape.v[vertexKeyStr] || !Array.isArray(shape.v[vertexKeyStr]) || shape.v[vertexKeyStr].length < 2) {
+              console.warn(`Vertex ${vertexKeyStr} (index ${vertexIndex}) not found, invalid, or incomplete in shape '${shape.name || 'Unnamed'}' for face '${faceKey}'. Skipping point for this face.`);
+              allVerticesValidForFace = false;
+              return;
+            }
+            currentProjected2DPoints.push({ x: shape.v[vertexKeyStr][0], y: shape.v[vertexKeyStr][1] });
+            if (shape.v[vertexKeyStr].length >= 3) {
+              sumZ += shape.v[vertexKeyStr][2];
+              numZ++;
             }
           });
-        }
+
+          if (!allVerticesValidForFace || currentProjected2DPoints.length < 3) {
+            return;
+          }
+
+          const uniqueProjectedPoints = [];
+          currentProjected2DPoints.forEach(p => {
+            if (!uniqueProjectedPoints.find(up => up.x === p.x && up.y === p.y)) {
+              uniqueProjectedPoints.push(p);
+            }
+          });
+
+          if (uniqueProjectedPoints.length < 3) {
+            return;
+          }
+
+          const currentFaceAvgZ = (numZ > 0) ? (sumZ / numZ) : -Infinity;
+          const candidateData = {
+            points2DForFootprint: uniqueProjectedPoints,
+            avgZ: currentFaceAvgZ,
+            originalFaceKey: faceKey, // Retain for debugging if needed
+            originalVerticesOrder: currentProjected2DPoints,
+            shapeName: shape.name || `shape_${shapeIndex}` // For potential future use or debugging
+          };
+
+          // Create a canonical representation of the 2D points for footprint comparison.
+          let canonicalKeyPoints = [...candidateData.points2DForFootprint].sort((a, b) => {
+            if (a.x !== b.x) return a.x - b.x;
+            return a.y - b.y;
+          });
+          let footprintKey = canonicalKeyPoints.map(p => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(';');
+
+          if (!processedFootprints.has(footprintKey) || candidateData.avgZ > processedFootprints.get(footprintKey).avgZ) {
+            processedFootprints.set(footprintKey, candidateData);
+          }
+        });
       });
 
-      // The old occlusion logic is now less critical but can still serve to resolve
-      // overlaps between different shapes or distinct Z-levels within a single shape.
-      // We sort by Z from bottom to top, so higher geometries overwrite lower ones.
-      allFoundGeometries.sort((a, b) => a.avgZ - b.avgZ);
+      // Generate XML for the selected (top-most for each footprint ACROSS ALL SHAPES) polygons
+      processedFootprints.forEach(selectedPolygon => {
+        let polygonPointsAttrs = "";
+        selectedPolygon.originalVerticesOrder.forEach((p, i) => {
+          polygonPointsAttrs += `x${i + 1}="${p.x}" y${i + 1}="${p.y}" `;
+        });
 
-      // A clipping library would be needed for perfect occlusion, but for many cases,
-      // simply taking the highest geometry at a given point is a reasonable approximation.
-      // This part of the logic is kept but is more effective with the new top-face filtering.
-      const processedGeometries = new Map();
-      allFoundGeometries.forEach(geom => {
-        // Create a representative key for the geometry's area. Using multiple points
-        // provides a better chance of detecting overlaps than the previous implementation.
-        // This is still a heuristic.
-        const footprintKey = geom.points.map(p => `${p.x},${p.y}`).join(';');
-        // We can't use the whole footprint as a key if it's slightly different.
-        // Let's use a simpler key based on a few sample points.
-        const key1 = `${geom.points[0].x},${geom.points[0].y}`;
-        const key2 = `${geom.points[Math.floor(geom.points.length / 2)].x},${geom.points[Math.floor(geom.points.length / 2)].y}`;
-
-        // By sorting by Z first, later (higher) geometries will overwrite earlier (lower) ones
-        // for the same key, providing a basic form of occlusion.
-        processedGeometries.set(key1, geom);
-        processedGeometries.set(key2, geom);
-      });
-
-      // Generate XML for the final selected geometries
-      let tplCounter = 0;
-      let tplElements = "";
-      const uniqueGeometries = [...new Set(processedGeometries.values())]; // Get unique geometries
-      uniqueGeometries.forEach((selectedGeom) => {
-        const isLine = selectedGeom.points.length === 2;
+        const pointSize = selectedPolygon.originalVerticesOrder.length;
         const defaultForec = "#ff000000";
         const defaultFillc = "#ffffffff";
         const lineTypeName = "";
@@ -793,34 +618,15 @@
         const lineTypeCap = "BUTT";
         const lineTypeJoin = "MITER";
         const lineTypeMiterLimit = "1.0";
-        const tplId = `tpl-${tplCounter}`;
-        const elementId = tplCounter.toString();
-        let elementXml = "";
-
-        if (isLine) {
-          const p1 = selectedGeom.points[0];
-          const p2 = selectedGeom.points[1];
-          const segments = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
-          elementXml = `
-  <PATH id="${elementId}" segments="${segments}" forec="${defaultForec}" drawline="1" fill="0">
-   <LINETYPE name="${lineTypeName}" width="${lineTypeWidth}" widthtype="${lineTypeWidthType}" cap="${lineTypeCap}" join="${lineTypeJoin}" miterlimit="${lineTypeMiterLimit}"/>
-  </PATH>`;
-        } else { // Polygon
-          let polygonPointsAttrs = "";
-          selectedGeom.points.forEach((p, i) => {
-            polygonPointsAttrs += `x${i + 1}="${p.x}" y${i + 1}="${p.y}" `;
-          });
-          elementXml = `
-  <POLYGON id="${elementId}" width="0.0" forec="${defaultForec}" fillc="${defaultFillc}" drawline="1" fill="1" smooth="0" pointsize="4" ${polygonPointsAttrs.trim()}>
-   <LINETYPE name="${lineTypeName}" width="${lineTypeWidth}" widthtype="${lineTypeWidthType}" cap="${lineTypeCap}" join="${lineTypeJoin}" miterlimit="${lineTypeMiterLimit}"/>
-  </POLYGON>`;
-        }
 
         tplElements += `
-<TPL id="${tplId}" matFill="mat1" matLine="mat2" deformTypes="Stretch2,Clipping">
- <geometry>${elementXml.trim()}</geometry>
+<TPL id="0" matFill="mat1" matLine="mat2" deformTypes="Stretch2,Clipping">
+ <geometry>
+  <POLYGON id="0" width="0.0" forec="${defaultForec}" fillc="${defaultFillc}" drawline="1" fill="1" smooth="0" pointsize="${pointSize}" ${polygonPointsAttrs.trim()}>
+   <LINETYPE name="${lineTypeName}" width="${lineTypeWidth}" widthtype="${lineTypeWidthType}" cap="${lineTypeCap}" join="${lineTypeJoin}" miterlimit="${lineTypeMiterLimit}"/>
+  </POLYGON>
+ </geometry>
 </TPL>`;
-        tplCounter++;
       });
 
       if (!tplElements) {
@@ -848,8 +654,6 @@
           const polygonNode = geometryNode.querySelector("POLYGON");
           if (polygonNode) {
             let pointsAttrs = "";
-            const polygonOriginalId = polygonNode.getAttribute("id") || `gen-poly-${tplNodes.length}-${viewerPolygons.length}`; // Fallback ID
-
             for (let i = 0; i < polygonNode.attributes.length; i++) {
               const attr = polygonNode.attributes[i];
               if (attr.name.match(/^x\d+$/) || attr.name.match(/^y\d+$/)) {
@@ -865,7 +669,7 @@
               defaultLinetypeWidthForViewer = lineTypeNode.getAttribute("width"); // Use specific if available
             }
 
-            viewerPolygons += `<POLYGON id="${polygonOriginalId}"${pointsAttrs} forec="${forec}" fillc="${fillc}" />\n`;
+            viewerPolygons += `<POLYGON${pointsAttrs} forec="${forec}" fillc="${fillc}" />\n`;
           }
           // Could extend to extract PATH elements here if needed in future
         }
@@ -878,13 +682,12 @@
 
 
     function displayGeneratedXml(xmlString) {
-      const beautifiedXml = vkbeautify.xml(xmlString, '\t');
       if (xmlOutputEditor) {
-        xmlOutputEditor.setValue(beautifiedXml);
+        xmlOutputEditor.setValue(xmlString);
       } else {
         // Fallback if editor not initialized (should not happen with current flow)
         const tempTextArea = document.createElement('textarea');
-        tempTextArea.value = beautifiedXml;
+        tempTextArea.value = xmlString;
         tempTextArea.style.width = '100%';
         tempTextArea.style.height = '100%';
         xmlEditorInnerContainer.innerHTML = '';
@@ -923,74 +726,6 @@
           wordWrap: 'on',
           minimap: { enabled: false }
         });
-
-        // Listen for cursor changes to enable highlighting
-        xmlOutputEditor.onDidChangeCursorPosition(e => {
-          const model = xmlOutputEditor.getModel();
-          if (!model) return;
-
-          const position = e.position;
-          const currentLineNumber = position.lineNumber;
-          const currentLineContent = model.getLineContent(currentLineNumber);
-
-          let elementIdToHighlight = null;
-
-          // Try to find a POLYGON or TPL tag and its ID on the current line or preceding lines
-          // This is a simplified parser. For robust XML parsing, a proper parser would be better.
-          for (let lineNum = currentLineNumber; lineNum >= 1; lineNum--) {
-            const lineContent = model.getLineContent(lineNum);
-            let match;
-
-            // Check for POLYGON ID
-            // Regex to find <POLYGON ... id="some-id" ... >
-            // It captures the ID from the id attribute if the cursor is on the line of the tag or after its opening.
-            const polygonRegex = /<POLYGON\s+[^>]*id\s*=\s*['"]([\w\-]+)['"][^>]*>/i;
-            if (lineNum === currentLineNumber) { // Only check current line for full tag match if cursor is on it
-              match = lineContent.substring(0, position.column - 1).match(polygonRegex) || lineContent.match(polygonRegex);
-            } else { // For previous lines, check the whole line
-              match = lineContent.match(polygonRegex);
-            }
-            if (match && match[1]) {
-              elementIdToHighlight = match[1];
-              break; // Found POLYGON ID
-            }
-
-            // Check for TPL ID (if no POLYGON ID found yet)
-            // Regex to find <TPL ... id="some-id" ... >
-            const tplRegex = /<TPL\s+[^>]*id\s*=\s*['"]([\w\-]+)['"][^>]*>/i;
-            if (lineNum === currentLineNumber) {
-              match = lineContent.substring(0, position.column - 1).match(tplRegex) || lineContent.match(tplRegex);
-            } else {
-              match = lineContent.match(tplRegex);
-            }
-            if (match && match[1]) {
-              // If we find a TPL, we want to highlight its corresponding polygon.
-              // TPL ID is "tpl-N", polygon ID is "N".
-              const tplIdValue = match[1]; // e.g., "tpl-0"
-              if (tplIdValue.startsWith("tpl-")) {
-                elementIdToHighlight = tplIdValue.substring(4); // Extracts "N" from "tpl-N"
-              } else {
-                // Fallback if TPL ID format is unexpected, clear highlight
-                elementIdToHighlight = null;
-              }
-              break; // Found TPL ID, derived polygon ID
-            }
-
-            if (lineContent.includes("</POLYGON>") || lineContent.includes("</TPL>") || lineContent.includes("<GROUP") || lineContent.includes("</GROUP>")) {
-              // Stop searching upwards if we hit a closing tag for these elements or a new group, 
-              // as the cursor is likely outside or in a different scope.
-              if (lineNum < currentLineNumber) break;
-            }
-            if (lineNum === currentLineNumber && position.lineNumber - lineNum > 5) break; // Limit lookbehind to a few lines
-          }
-
-          if (elementIdToHighlight) {
-            highlightSvgElementById(elementIdToHighlight);
-          } else {
-            clearCurrentHighlight();
-          }
-        });
-
       });
 
       loadJsonButton.addEventListener('click', async () => {
