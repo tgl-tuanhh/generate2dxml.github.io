@@ -12,11 +12,15 @@
 
   <div class="controls">
     <h1>Công cụ vẽ 2D</h1>
-    <p>Dán mảng tọa độ JSON (hoặc mảng của các mảng tọa độ) vào đây.</p>
+    <p>Thêm các polygon bạn muốn vẽ. Mỗi polygon trong một ô riêng.</p>
 
-    <label for="coordInput">Dữ liệu tọa độ (JSON Array):</label>
-    <textarea id="coordInput"
-      placeholder="[&#10;  [{ &quot;x&quot;: 10, &quot;y&quot;: 10 }, { &quot;x&quot;: 100, &quot;y&quot;: 10 }],&#10;  [{ &quot;x&quot;: 50, &quot;y&quot;: 50 }, { &quot;x&quot;: 150, &quot;y&quot;: 100 }]&#10;]"></textarea>
+    <div id="polygonInputsContainer">
+      <!-- Các ô nhập liệu sẽ được thêm vào đây bằng JS -->
+    </div>
+
+    <button id="btnAddPolygonInput" class="button-add">Thêm Polygon</button>
+
+    <hr class="separator">
 
     <div class="button-group">
       <button id="btnDrawPolygon">Vẽ Polygons / Lines</button>

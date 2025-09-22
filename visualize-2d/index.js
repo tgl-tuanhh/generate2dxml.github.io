@@ -3,13 +3,14 @@ window.onload = function () {
   const canvas = document.getElementById('drawingCanvas');
   const canvasContainer = document.querySelector('.canvas-container');
   const ctx = canvas.getContext('2d');
-  const coordInput = document.getElementById('coordInput');
+  const polygonInputsContainer = document.getElementById('polygonInputsContainer');
 
   // Lấy các nút bấm
   const btnDrawPolygon = document.getElementById('btnDrawPolygon');
   const btnDrawPoints = document.getElementById('btnDrawPoints');
   const btnClear = document.getElementById('btnClear');
   const btnResetView = document.getElementById('btnResetView');
+  const btnAddPolygonInput = document.getElementById('btnAddPolygonInput');
 
   // Biến toàn cục để lưu trạng thái vẽ cuối cùng
   let lastDrawnData = {
@@ -27,7 +28,7 @@ window.onload = function () {
   };
 
   // Mảng màu để vẽ các hình khác nhau
-  const COLORS = ['#007bff', '#28a745', '#dc3545', '#ffc107', '#17a2b8', '#6f42c1'];
+  const COLORS = ['#007bff', '#28a745', '#dc3545', '#ffc107', '#17a2b8', '#6f42c1', '#fd7e14', '#20c997', '#6610f2'];
 
   // --- CÁC HÀM TIỆN ÍCH ---
 
@@ -41,44 +42,41 @@ window.onload = function () {
   }
 
   /**
-   * Phân tích text từ textarea thành một mảng các đối tượng tọa độ.
-   * Trả về một mảng các mảng tọa độ hoặc null nếu có lỗi.
-   * Chấp nhận cả `[{...}]` và `[[{...}], [{...}]]`
+   * Phân tích text từ tất cả các textarea thành một mảng các mảng tọa độ.
    */
-  function parseCoordinates() {
-    const text = coordInput.value.trim();
-    if (!text) {
-      alert("Vui lòng nhập dữ liệu tọa độ.");
-      return null;
-    }
-    try {
-      // Cố gắng parse chuỗi JSON
-      const data = JSON.parse(text);
-      // Kiểm tra xem có phải là mảng không
-      if (!Array.isArray(data)) {
-        alert("Dữ liệu phải là một mảng (Array).");
+  function parseAllCoordinates() {
+    const textareas = polygonInputsContainer.querySelectorAll('textarea');
+    const allPointArrays = [];
+
+    for (const textarea of textareas) {
+      const text = textarea.value.trim();
+      if (!text) {
+        continue; // Bỏ qua các ô trống
+      }
+
+      try {
+        // Biến đổi JS object string thành JSON string hợp lệ
+        let sanitizedText = text
+          .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":')
+          .replace(/,\s*([}\]])/g, "$1");
+
+        const data = JSON.parse(sanitizedText);
+
+        if (Array.isArray(data)) {
+          allPointArrays.push(data);
+        } else {
+          alert("Dữ liệu trong một ô phải là một mảng (Array).");
+          return null; // Dừng lại nếu có lỗi
+        }
+      } catch (e) {
+        alert("Lỗi cú pháp JSON trong một ô nhập liệu. Vui lòng kiểm tra lại.\n\nChi tiết lỗi: " + e.message);
+        textarea.focus(); // Tập trung vào ô bị lỗi
         return null;
       }
-
-      // Nếu mảng rỗng, không có gì để vẽ
-      if (data.length === 0) {
-        return [];
-      }
-
-      // Kiểm tra xem phần tử đầu tiên có phải là mảng không
-      // Đây là cách đơn giản để phát hiện định dạng [[{..}], ..]
-      if (Array.isArray(data[0])) {
-        // Giả định đây là mảng của các mảng điểm
-        return data;
-      } else {
-        // Nếu không, bọc nó trong một mảng để xử lý nhất quán
-        return [data];
-      }
-    } catch (e) {
-      alert("Lỗi cú pháp JSON. Vui lòng kiểm tra lại dữ liệu đầu vào.\n\nChi tiết lỗi: " + e.message);
-      return null;
     }
+    return allPointArrays;
   }
+
 
   /**
    * Tìm ra giới hạn (min/max) của các tọa độ để tự động căn chỉnh
@@ -277,18 +275,46 @@ window.onload = function () {
     redraw();
   }
 
+  // --- LOGIC THÊM/XÓA Ô NHẬP LIỆU ---
+
+  function createNewPolygonInput(content = '') {
+    const groupId = `polygon-group-${Date.now()}`;
+    const group = document.createElement('div');
+    group.className = 'polygon-input-group';
+    group.id = groupId;
+
+    const textarea = document.createElement('textarea');
+    textarea.placeholder = `[\n  {x: 10, y: 10},\n  {x: 100, y: 10}\n]`;
+    textarea.value = content;
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'btn-remove-polygon';
+    removeBtn.innerHTML = '&times;';
+    removeBtn.onclick = () => {
+      document.getElementById(groupId).remove();
+    };
+
+    group.appendChild(textarea);
+    group.appendChild(removeBtn);
+    polygonInputsContainer.appendChild(group);
+  }
 
   // --- GÁN SỰ KIỆN CHO CÁC NÚT BẤM ---
+
+  btnAddPolygonInput.addEventListener('click', () => createNewPolygonInput());
 
   btnResetView.addEventListener('click', autoFit);
 
   btnClear.addEventListener('click', () => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     lastDrawnData.pointArrays = null; // Cũng xóa dữ liệu đã lưu
+    // Xóa hết các ô nhập liệu và tạo lại 1 ô trống
+    polygonInputsContainer.innerHTML = '';
+    createNewPolygonInput();
   });
 
   btnDrawPolygon.addEventListener('click', () => {
-    const pointArrays = parseCoordinates();
+    const pointArrays = parseAllCoordinates();
     if (pointArrays) {
       lastDrawnData = { pointArrays, isPolygon: true };
       autoFit();
@@ -296,7 +322,7 @@ window.onload = function () {
   });
 
   btnDrawPoints.addEventListener('click', () => {
-    const pointArrays = parseCoordinates();
+    const pointArrays = parseAllCoordinates();
     if (pointArrays) {
       lastDrawnData = { pointArrays, isPolygon: false };
       autoFit();
@@ -376,7 +402,7 @@ window.onload = function () {
 
 
   // Gợi ý dữ liệu mẫu khi tải trang (giờ là mảng của các mảng)
-  coordInput.value = JSON.stringify([
+  const sampleData = [
     [
       { "x": 2478, "y": -474 },
       { "x": 2478, "y": 1526 },
@@ -390,14 +416,21 @@ window.onload = function () {
       { "x": 6000, "y": 4000 },
       { "x": 7000, "y": 5500 }
     ]
-  ], null, 2);
+  ];
+
+  sampleData.forEach(polygon => {
+    createNewPolygonInput(JSON.stringify(polygon, null, 2));
+  });
 
   // Khởi tạo kích thước canvas lần đầu
   resizeCanvas();
   // Vẽ dữ liệu mẫu lúc ban đầu
-  const initialPoints = parseCoordinates();
-  if (initialPoints) {
-    lastDrawnData = { pointArrays: initialPoints, isPolygon: true };
+  const initialPointArrays = parseAllCoordinates();
+  if (initialPointArrays && initialPointArrays.length > 0) {
+    lastDrawnData = { pointArrays: initialPointArrays, isPolygon: true };
     autoFit();
+  } else {
+    // Nếu không có dữ liệu mẫu, tạo một ô trống
+    createNewPolygonInput();
   }
 };

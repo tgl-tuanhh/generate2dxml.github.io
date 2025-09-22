@@ -22,6 +22,78 @@ body {
   z-index: 10;
 }
 
+#polygonInputsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.polygon-input-group {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.polygon-input-group textarea {
+  width: 100%;
+  height: 120px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 10px;
+  font-family: monospace;
+  font-size: 14px;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.btn-remove-polygon {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background-color: #fcebeb;
+  color: #dc3545;
+  border-radius: 50%;
+  cursor: pointer;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 14px;
+}
+
+.btn-remove-polygon:hover {
+  background-color: #f8d7da;
+  color: #c82333;
+}
+
+
+.button-add {
+  width: 100%;
+  padding: 10px;
+  background-color: #e7e7e7;
+  border: 1px dashed #ccc;
+  color: #555;
+  cursor: pointer;
+  font-weight: bold;
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+
+.button-add:hover {
+  background-color: #ddd;
+}
+
+.separator {
+  border: none;
+  border-top: 1px solid #eee;
+  margin: 0 0 20px 0;
+}
+
 h1 {
   margin-top: 0;
   color: #333;
@@ -47,7 +119,8 @@ textarea {
 }
 
 .button-group {
-  margin-top: 20px;
+  margin-top: 0;
+  /* Bỏ margin-top vì đã có separator */
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
