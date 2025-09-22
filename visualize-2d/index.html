@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Visualize 2D</title>
+  <link rel="stylesheet" href="index.css">
+</head>
+
+<body>
+
+  <div class="controls">
+    <h1>Công cụ vẽ 2D</h1>
+    <p>Dán mảng tọa độ JSON (hoặc mảng của các mảng tọa độ) vào đây.</p>
+
+    <label for="coordInput">Dữ liệu tọa độ (JSON Array):</label>
+    <textarea id="coordInput"
+      placeholder="[&#10;  [{ &quot;x&quot;: 10, &quot;y&quot;: 10 }, { &quot;x&quot;: 100, &quot;y&quot;: 10 }],&#10;  [{ &quot;x&quot;: 50, &quot;y&quot;: 50 }, { &quot;x&quot;: 150, &quot;y&quot;: 100 }]&#10;]"></textarea>
+
+    <div class="button-group">
+      <button id="btnDrawPolygon">Vẽ Polygons / Lines</button>
+      <button id="btnDrawPoints">Chỉ vẽ các điểm</button>
+      <button id="btnResetView">Căn chỉnh lại View</button>
+      <button id="btnClear">Xóa màn hình</button>
+    </div>
+  </div>
+
+  <div class="canvas-container">
+    <canvas id="drawingCanvas"></canvas>
+  </div>
+  <script src="index.js"></script>
+</body>
+
+</html>
