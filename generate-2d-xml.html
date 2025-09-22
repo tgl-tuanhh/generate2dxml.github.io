@@ -37,13 +37,21 @@
     }
 
     #mainContainer {
-      display: flex;
-      flex-direction: row;
+      position: relative;
       flex-grow: 1;
       width: 100%;
-      padding: 0 10px 10px 10px;
+    }
+
+    #mainInnerContainer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      flex-direction: row;
+      width: 100%;
       box-sizing: border-box;
-      overflow: hidden;
     }
 
     #svgViewerPanel {
@@ -62,9 +70,9 @@
     #xmlOutputPanel {
       flex: 1;
       margin-left: 5px;
+      margin-bottom: 5px;
       display: flex;
       flex-direction: column;
-      /* Editor on top, button below */
       box-sizing: border-box;
       overflow: hidden;
     }
@@ -127,18 +135,29 @@
     <p>Load a 3D JSON to see the 2D XML and preview.</p>
   </div>
   <div id="mainContainer">
-    <div id="svgViewerPanel">
-      <!-- SVG will be rendered here -->
-    </div>
-    <div id="xmlOutputPanel">
-      <div id="xmlEditorContainer">
-        <div id="xmlEditorInnerContainer" aria-label="Generated XML Output Area"></div>
+    <div id="mainInnerContainer">
+      <div id="svgViewerPanel">
+        <!-- SVG will be rendered here -->
       </div>
-      <button id="copyXmlButton">Copy Generated XML</button>
+      <div id="xmlOutputPanel">
+        <div id="xmlEditorContainer">
+          <div id="xmlEditorInnerContainer" aria-label="Generated XML Output Area"></div>
+        </div>
+        <button id="copyXmlButton">Copy Generated XML</button>
+      </div>
     </div>
   </div>
 
   <script>
+    function debounce(func, delay) {
+      let timeout;
+      return function (...args) {
+        const context = this;
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(context, args), delay);
+      };
+    }
+
     // Monaco Editor instance for XML output
     let xmlOutputEditor;
     const svgViewerPanel = document.getElementById('svgViewerPanel');
@@ -726,6 +745,91 @@
           wordWrap: 'on',
           minimap: { enabled: false }
         });
+
+        // Listen for cursor changes to enable highlighting
+        xmlOutputEditor.onDidChangeCursorPosition(e => {
+          const model = xmlOutputEditor.getModel();
+          if (!model) return;
+
+          const position = e.position;
+          const currentLineNumber = position.lineNumber;
+          const currentLineContent = model.getLineContent(currentLineNumber);
+
+          let elementIdToHighlight = null;
+
+          // Try to find a POLYGON or TPL tag and its ID on the current line or preceding lines
+          // This is a simplified parser. For robust XML parsing, a proper parser would be better.
+          for (let lineNum = currentLineNumber; lineNum >= 1; lineNum--) {
+            const lineContent = model.getLineContent(lineNum);
+            let match;
+
+            // Check for POLYGON ID
+            // Regex to find <POLYGON ... id="some-id" ... >
+            // It captures the ID from the id attribute if the cursor is on the line of the tag or after its opening.
+            const polygonRegex = /<POLYGON\s+[^>]*id\s*=\s*['"]([\w\-]+)['"][^>]*>/i;
+            if (lineNum === currentLineNumber) { // Only check current line for full tag match if cursor is on it
+              match = lineContent.substring(0, position.column - 1).match(polygonRegex) || lineContent.match(polygonRegex);
+            } else { // For previous lines, check the whole line
+              match = lineContent.match(polygonRegex);
+            }
+            if (match && match[1]) {
+              elementIdToHighlight = match[1];
+              break; // Found POLYGON ID
+            }
+
+            // Check for TPL ID (if no POLYGON ID found yet)
+            // Regex to find <TPL ... id="some-id" ... >
+            const tplRegex = /<TPL\s+[^>]*id\s*=\s*['"]([\w\-]+)['"][^>]*>/i;
+            if (lineNum === currentLineNumber) {
+              match = lineContent.substring(0, position.column - 1).match(tplRegex) || lineContent.match(tplRegex);
+            } else {
+              match = lineContent.match(tplRegex);
+            }
+            if (match && match[1]) {
+              // If we find a TPL, we want to highlight its corresponding polygon.
+              // TPL ID is "tpl-N", polygon ID is "N".
+              const tplIdValue = match[1]; // e.g., "tpl-0"
+              if (tplIdValue.startsWith("tpl-")) {
+                elementIdToHighlight = tplIdValue.substring(4); // Extracts "N" from "tpl-N"
+              } else {
+                // Fallback if TPL ID format is unexpected, clear highlight
+                elementIdToHighlight = null;
+              }
+              break; // Found TPL ID, derived polygon ID
+            }
+
+            if (lineContent.includes("</POLYGON>") || lineContent.includes("</TPL>") || lineContent.includes("<GROUP") || lineContent.includes("</GROUP>")) {
+              // Stop searching upwards if we hit a closing tag for these elements or a new group, 
+              // as the cursor is likely outside or in a different scope.
+              if (lineNum < currentLineNumber) break;
+            }
+            if (lineNum === currentLineNumber && position.lineNumber - lineNum > 5) break; // Limit lookbehind to a few lines
+          }
+
+          if (elementIdToHighlight) {
+            highlightSvgElementById(elementIdToHighlight);
+          } else {
+            clearCurrentHighlight();
+          }
+        });
+
+        // Listen for content changes to update the SVG preview in real-time
+        xmlOutputEditor.onDidChangeModelContent(debounce(() => {
+          try {
+            const currentXml = xmlOutputEditor.getValue();
+            // Avoid re-parsing initial comments or error messages
+            if (!currentXml || currentXml.trim().startsWith("<!--")) {
+              return;
+            }
+            const viewerXml = transformTargetXmlToViewerXml(currentXml);
+            convertAndDisplaySVG(viewerXml);
+          } catch (error) {
+            console.error("Error updating preview from XML edit:", error);
+            // Display a non-intrusive error in the SVG panel itself
+            svgViewerPanel.innerHTML = `<p style="color: red;">Preview Error: ${error.message}</p>`;
+          }
+        }, 500)); // 500ms debounce to avoid updates on every keystroke
+
       });
 
       loadJsonButton.addEventListener('click', async () => {
